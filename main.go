@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -52,20 +53,20 @@ func main() {
 	os.MkdirAll("./Videos", 0755)
 	os.MkdirAll("./processed", 0755)
 
-	// Iniciar limpiador de RAM (borra segmentos inactivos cada 45 segundos)
+	// Iniciar limpiador de RAM (borra segmentos inactivos cada 30 segundos)
 	go func() {
 		for {
-			time.Sleep(45 * time.Second)
+			time.Sleep(30 * time.Second)
 			cacheMutex.Lock()
 			count := 0
 			for path, seg := range segmentCache {
-				if time.Since(seg.LastAccess) > 45*time.Second {
+				if time.Since(seg.LastAccess) > 30*time.Second {
 					delete(segmentCache, path)
 					count++
 				}
 			}
 			if count > 0 {
-				fmt.Printf("🧹 Limpiador RAM: Se liberaron %d segmentos (45s inactividad)\n", count)
+				fmt.Printf("🧹 Limpiador RAM: Se liberaron %d segmentos (30s inactividad)\n", count)
 			}
 			cacheMutex.Unlock()
 		}
@@ -94,6 +95,7 @@ func main() {
 	mux.HandleFunc("/api/jobs", handleListJobs)
 	mux.HandleFunc("/api/jobs/", handleGetJob)
 	mux.HandleFunc("/api/delete", handleDeleteVideo)
+	mux.HandleFunc("/api/stats", handleStats)
 
 	// Servir segmentos DASH con headers correctos
 	mux.HandleFunc("/processed/", handleDASHFiles)
@@ -154,7 +156,8 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 // handleDASHFiles sirve archivos DASH optimizados con RAM y entregas sin bloqueo
 func handleDASHFiles(w http.ResponseWriter, r *http.Request) {
-	filePath := "." + r.URL.Path
+	rawPath, _ := url.PathUnescape(r.URL.Path)
+	filePath := "." + rawPath
 	ext := filepath.Ext(filePath)
 
 	// Headers de optimización de red
@@ -179,6 +182,7 @@ func handleDASHFiles(w http.ResponseWriter, r *http.Request) {
 		// 2. Si no está en RAM, leerlo UNA SOLA VEZ y servirlo mientras se cachea
 		data, err := os.ReadFile(filePath)
 		if err == nil {
+			fmt.Printf("📥 RAM Cache: Cargando %s\n", filePath)
 			// Guardar en cache para la próxima petición
 			cacheMutex.Lock()
 			segmentCache[filePath] = &CachedSegment{
@@ -193,6 +197,8 @@ func handleDASHFiles(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			w.Write(data)
 			return
+		} else {
+			fmt.Printf("⚠️ RAM Cache Error: No se pudo leer %s: %v\n", filePath, err)
 		}
 	}
 
@@ -548,5 +554,18 @@ func handleDeleteVideo(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "success",
 		"message": "Video eliminado: " + req.FileName,
+	})
+}
+
+// handleStats devuelve estadísticas del servidor (RAM cache, etc.)
+func handleStats(w http.ResponseWriter, r *http.Request) {
+	cacheMutex.Lock()
+	count := len(segmentCache)
+	cacheMutex.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"cache_count": count,
+		"status":      "online",
 	})
 }

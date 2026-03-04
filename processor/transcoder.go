@@ -131,44 +131,59 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 
 	// 1. Añadir flujos de VIDEO (Múltiples calidades)
 	for i, p := range profiles {
+		// Parseamos el bitrate para cálculos de VBV (Buffer Verifier)
+		var bitrateNum int
+		fmt.Sscanf(p.VideoBitrate, "%dk", &bitrateNum)
+		maxRate := fmt.Sprintf("%dk", int(float64(bitrateNum)*1.15)) // 15% de margen para picos
+		bufSize := fmt.Sprintf("%dk", bitrateNum*2)                  // Buffer de 2s para estabilidad
+
 		args = append(args,
-			"-map", "0:v:0", // Mapear el video original para cada perfil
+			"-map", "0:v:0",
 			fmt.Sprintf("-c:v:%d", i), "libx264",
 			fmt.Sprintf("-b:v:%d", i), p.VideoBitrate,
-			fmt.Sprintf("-maxrate:v:%d", i), p.VideoBitrate,
-			fmt.Sprintf("-bufsize:v:%d", i), p.VideoBitrate,
+			fmt.Sprintf("-maxrate:v:%d", i), maxRate,
+			fmt.Sprintf("-bufsize:v:%d", i), bufSize,
 			fmt.Sprintf("-s:v:%d", i), p.Resolution,
 			fmt.Sprintf("-pix_fmt:v:%d", i), "yuv420p",
 			fmt.Sprintf("-profile:v:%d", i), "main",
+			fmt.Sprintf("-crf:v:%d", i), "20",
+			fmt.Sprintf("-x264-params:v:%d", i), "nal-hrd=vbr:force-cfr=1", // Estabiliza el flujo de frames
 		)
 	}
 
 	// 2. Añadir flujo de AUDIO ÚNICO (Master Audio)
 	// Usamos un solo flujo de audio para todas las calidades para evitar cortes al cambiar de resolución
 	args = append(args,
-		"-map", "0:a:0?", // Mapear el audio original una sola vez
+		"-map", "0:a:0?",
 		"-c:a:0", "aac",
-		"-b:a:0", "128k", // Bitrate estable y de alta calidad
+		"-b:a:0", "128k",
+		"-maxrate:a:0", "128k", // CBR Audio (Clave para evitar micro-cortes)
+		"-bufsize:a:0", "128k",
+		"-ar:0", "48000", // 48kHz (División perfecta para segmentos de 5s)
 		"-ac:0", "2",
+		"-af", "aresample=async=1:first_pts=0", // Alineación de audio al tiempo cero
 	)
 
 	// Opciones globales de encoding (para calidad pro y concurrencia)
 	args = append(args,
-		"-preset", "slow", // Máxima eficiencia y calidad (Pro Compression)
-		"-threads", "0", // Usar todos los núcleos disponibles
-		"-r", "24", // Forzar 24 FPS para garantizar segmentos idénticos
-		"-g", "48", // GOP fijo para DASH (2 segundos exactos a 24fps)
-		"-keyint_min", "48",
-		"-sc_threshold", "0", // GOP cerrado para Shaka (sin cortes de escena dinámicos)
-		"-movflags", "+faststart", // Cold Start: Mueve metadatos al inicio
+		"-preset", "medium",
+		"-threads", "0",
+		"-r", "24",
+		"-force_key_frames", "expr:gte(t,n_forced*5)", // Keyframe exacto cada 5s (Cero parpadeo)
+		"-sc_threshold", "0",
+		"-avoid_negative_ts", "make_zero",
+		"-map_metadata", "-1",
+		"-movflags", "+faststart",
 	)
 
 	// Configuración DASH (Nivel Pro)
 	args = append(args,
 		"-f", "dash",
-		"-seg_duration", "4",
+		"-seg_duration", "5",
+		"-index_correction", "1",
 		"-use_timeline", "1",
 		"-use_template", "1",
+		"-dash_segment_type", "mp4", // Asegura formato compatible sin cabeceras extra
 		"-init_seg_name", "init-$RepresentationID$.m4s",
 		"-media_seg_name", "chunk-$RepresentationID$-$Number%05d$.m4s",
 		"-adaptation_sets", "id=0,streams=v id=1,streams=a",
