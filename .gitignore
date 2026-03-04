@@ -1,0 +1,21 @@
+# Binarios
+streamdavefast
+streamforge
+
+# Videos y archivos procesados
+Videos/
+processed/
+
+# Entorno
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
