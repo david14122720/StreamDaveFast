@@ -1069,7 +1069,7 @@
             // Configuración profesional para streaming ultrarrápido
             shakaPlayer.configure({
                 streaming: {
-                    bufferingGoal: 30,            // Buffer 30s adelante (Netflix Style)
+                    bufferingGoal: 45,            // Buffer 45s adelante (Ultra Stability)
                     rebufferingGoal: 10,           // 10s para reanudar si se corta (Estabilidad)
                     bufferBehind: 20,              // Mantener 20s atrás
                     retryParameters: {
@@ -1081,7 +1081,7 @@
                     failureCallback: (error) => {
                         console.warn('Streaming failure:', error);
                     },
-                    smallGapLimit: 0.5,
+                    smallGapLimit: 1.5,           // Ignorar mini-huecos de hasta 1.5s para evitar parpadeo
                     jumpLargeGaps: true,
                 },
                 abr: {

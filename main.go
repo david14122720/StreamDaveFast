@@ -52,20 +52,20 @@ func main() {
 	os.MkdirAll("./Videos", 0755)
 	os.MkdirAll("./processed", 0755)
 
-	// Iniciar limpiador de RAM (borra segmentos inactivos cada 30 segundos)
+	// Iniciar limpiador de RAM (borra segmentos inactivos cada 45 segundos)
 	go func() {
 		for {
-			time.Sleep(30 * time.Second)
+			time.Sleep(45 * time.Second)
 			cacheMutex.Lock()
 			count := 0
 			for path, seg := range segmentCache {
-				if time.Since(seg.LastAccess) > 30*time.Second {
+				if time.Since(seg.LastAccess) > 45*time.Second {
 					delete(segmentCache, path)
 					count++
 				}
 			}
 			if count > 0 {
-				fmt.Printf("🧹 Limpiador RAM: Se liberaron %d segmentos (30s inactividad)\n", count)
+				fmt.Printf("🧹 Limpiador RAM: Se liberaron %d segmentos (45s inactividad)\n", count)
 			}
 			cacheMutex.Unlock()
 		}
@@ -152,49 +152,59 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// handleDASHFiles sirve archivos DASH optimizados con RAM y sendfile
+// handleDASHFiles sirve archivos DASH optimizados con RAM y entregas sin bloqueo
 func handleDASHFiles(w http.ResponseWriter, r *http.Request) {
 	filePath := "." + r.URL.Path
 	ext := filepath.Ext(filePath)
 
-	// Solo cacheamos segmentos (.m4s), no el manifiesto (.mpd) para evitar desincronización
+	// Headers de optimización de red
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	// 1. Intentar servir desde RAM (Máxima velocidad, 0 ms latencia disco)
 	if ext == ".m4s" {
 		cacheMutex.Lock()
 		if seg, exists := segmentCache[filePath]; exists {
 			seg.LastAccess = time.Now()
 			cacheMutex.Unlock()
+
 			w.Header().Set("X-Cache", "HIT-RAM")
 			w.Header().Set("Content-Type", "video/iso.segment")
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			w.Write(seg.Data)
 			return
 		}
 		cacheMutex.Unlock()
 
-		// Si no está en cache, leerlo y guardarlo
+		// 2. Si no está en RAM, leerlo UNA SOLA VEZ y servirlo mientras se cachea
 		data, err := os.ReadFile(filePath)
 		if err == nil {
+			// Guardar en cache para la próxima petición
 			cacheMutex.Lock()
 			segmentCache[filePath] = &CachedSegment{
 				Data:       data,
 				LastAccess: time.Now(),
 			}
 			cacheMutex.Unlock()
+
+			// Servir el dato que ya tenemos en memoria (evitamos el doble read de ServeFile)
+			w.Header().Set("X-Cache", "MISS-RAM-DOWNLOADED")
+			w.Header().Set("Content-Type", "video/iso.segment")
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			w.Write(data)
+			return
 		}
 	}
 
-	// Establecer Content-Type correcto
-	switch ext {
-	case ".mpd":
+	// 3. Fallback para manifiestos (.mpd) u otros archivos
+	if ext == ".mpd" {
 		w.Header().Set("Content-Type", "application/dash+xml")
-		w.Header().Set("Cache-Control", "no-cache")
-	case ".m4s":
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	} else if ext == ".m4s" {
 		w.Header().Set("Content-Type", "video/iso.segment")
-		w.Header().Set("Cache-Control", "public, max-age=31536000")
-	case ".mp4":
-		w.Header().Set("Content-Type", "video/mp4")
 	}
 
-	// Usar http.ServeFile para activar 'sendfile' (Kernel a Tarjeta Red sin CPU)
+	// Usar http.ServeFile para activar 'sendfile' en el fallback
 	http.ServeFile(w, r, filePath)
 }
 
