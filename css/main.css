@@ -1,0 +1,29 @@
+#media {
+	margin: auto;
+}
+#video {
+	width: 50%;
+	margin: auto;
+	margin-left: 250px;
+	margin-top: 20px;
+}
+nav {
+	width: 50%;
+	margin: auto;
+	margin-left: 250px;	
+}
+#button {
+	float: left;
+}
+#bar {
+	width: 435px;
+	height: 23px;
+	margin-left: 70px;
+	background-color: rgba(0,0,0,0.2);
+}
+#progress {
+	position: absolute;
+	width: 0px;
+	height: 23px;
+	background-color: rgba(0,0,0,0.8);
+}
