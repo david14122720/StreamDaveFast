@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -65,16 +66,34 @@ func main() {
 	mux.Handle("/", http.FileServer(http.Dir("./")))
 
 	port := "8080"
+	localIP := getLocalIP()
+
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Printf("🚀 StreamDaveFast iniciado en http://localhost:%s\n", port)
+	fmt.Printf("🚀 StreamDaveFast Ultra iniciado\n")
+	fmt.Printf("🏠 Local:   http://localhost:%s\n", port)
+	if localIP != "" {
+		fmt.Printf("🌐 Red:     http://%s:%s\n", localIP, port)
+	}
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("📁 Videos:     ./Videos/")
 	fmt.Println("📦 Procesados: ./processed/")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Servidor HTTP con CORS
+	// Servidor HTTP con CORS (escuchando en todas las interfaces)
 	handler := corsMiddleware(mux)
 	log.Fatal(http.ListenAndServe(":"+port, handler))
+}
+
+// getLocalIP intenta obtener la IP local real de la red
+func getLocalIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return "127.0.0.1"
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP.String()
 }
 
 // corsMiddleware agrega headers CORS a todas las respuestas
@@ -125,58 +144,63 @@ func handleVideoFiles(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filePath)
 }
 
-// handleListVideos devuelve la lista de videos disponibles con su estado de procesamiento
+// handleListVideos devuelve la lista de videos disponibles (originales y procesados)
 func handleListVideos(w http.ResponseWriter, r *http.Request) {
-	files, err := os.ReadDir("./Videos")
-	if err != nil {
-		jsonError(w, "No se pudo leer la carpeta Videos", http.StatusInternalServerError)
-		return
-	}
+	// Mapa para agrupar videos por nombre
+	videoMap := make(map[string]*VideoInfo)
 
-	// Verificar que existe la carpeta processed
-	if _, err := os.Stat("./processed"); os.IsNotExist(err) {
-		os.MkdirAll("./processed", 0755)
-	}
-
-	var videos []VideoInfo
+	// 1. Escanear videos originales subidos (si aún existen)
+	files, _ := os.ReadDir("./Videos")
 	for _, file := range files {
 		if file.IsDir() {
 			continue
 		}
-
 		ext := strings.ToLower(filepath.Ext(file.Name()))
 		if ext != ".mp4" && ext != ".mkv" && ext != ".webm" && ext != ".avi" && ext != ".mov" {
 			continue
 		}
 
-		info, _ := file.Info()
 		name := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+		info, _ := file.Info()
 
-		sanitizedName := sanitizeName(name)
-		manifestPath := filepath.Join("processed", sanitizedName, "manifest.mpd")
+		v := &VideoInfo{
+			Name:      name,
+			FileName:  file.Name(),
+			Size:      info.Size(),
+			DirectURL: "/Videos/" + file.Name(),
+		}
+		videoMap[sanitizeName(name)] = v
+	}
 
-		isProcessed := false
-		manifestDir := filepath.Join("processed", sanitizedName)
+	// 2. Escanear videos ya procesados
+	processedDirs, _ := os.ReadDir("./processed")
+	for _, dir := range processedDirs {
+		if !dir.IsDir() {
+			continue
+		}
+
+		dirName := dir.Name() // nombre sanitizado
+		manifestPath := filepath.Join("processed", dirName, "manifest.mpd")
 
 		if _, err := os.Stat(manifestPath); err == nil {
-			isProcessed = true
-		} else if entries, err := os.ReadDir(manifestDir); err == nil && len(entries) > 0 {
-			isProcessed = true
+			v, exists := videoMap[dirName]
+			if !exists {
+				// El original fue borrado, pero el procesado existe
+				v = &VideoInfo{
+					Name: dirName, // Podríamos tratar de recuperar el nombre original pero el sanitizado sirve
+					// FileName: (ya no existe el original)
+				}
+				videoMap[dirName] = v
+			}
+			v.IsProcessed = true
+			v.ManifestURL = "/" + manifestPath
 		}
+	}
 
-		video := VideoInfo{
-			Name:     name,
-			FileName: file.Name(),
-			Size:     info.Size(),
-		}
-
-		if isProcessed {
-			video.IsProcessed = true
-			video.ManifestURL = "/" + manifestPath
-		}
-		video.DirectURL = "/Videos/" + file.Name()
-
-		videos = append(videos, video)
+	// Convertir mapa a slice
+	var videos []VideoInfo
+	for _, v := range videoMap {
+		videos = append(videos, *v)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -403,11 +427,11 @@ func handleGetVideo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(VideoInfo{
-		Name:         name,
-		FileName:     videoName,
-		Size:         info.Size(),
-		IsProcessed:  isProcessed,
-		ManifestURL:  func() string { if isProcessed { return "/" + manifestPath }; return "" }(),
+		Name:        name,
+		FileName:    videoName,
+		Size:        info.Size(),
+		IsProcessed: isProcessed,
+		ManifestURL: func() string { if isProcessed { return "/" + manifestPath }; return "" }(),
 		DirectURL:    "/Videos/" + videoName,
 	})
 }
