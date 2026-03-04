@@ -9,9 +9,22 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 	"web-player-backend/processor"
+)
+
+// RAM Cache para segmentos (Optimización de velocidad)
+type CachedSegment struct {
+	Data       []byte
+	LastAccess time.Time
+}
+
+var (
+	segmentCache = make(map[string]*CachedSegment)
+	cacheMutex   sync.Mutex
 )
 
 var queue *processor.Queue
@@ -39,8 +52,34 @@ func main() {
 	os.MkdirAll("./Videos", 0755)
 	os.MkdirAll("./processed", 0755)
 
-	// Iniciar cola de procesamiento (2 workers concurrentes)
-	queue = processor.NewQueue(2)
+	// Iniciar limpiador de RAM (borra segmentos inactivos cada 30 segundos)
+	go func() {
+		for {
+			time.Sleep(30 * time.Second)
+			cacheMutex.Lock()
+			count := 0
+			for path, seg := range segmentCache {
+				if time.Since(seg.LastAccess) > 30*time.Second {
+					delete(segmentCache, path)
+					count++
+				}
+			}
+			if count > 0 {
+				fmt.Printf("🧹 Limpiador RAM: Se liberaron %d segmentos (30s inactividad)\n", count)
+			}
+			cacheMutex.Unlock()
+		}
+	}()
+
+	// Iniciar cola de procesamiento (Detección dinámica de núcleos)
+	numWorkers := runtime.NumCPU()
+	if numWorkers > 4 {
+		numWorkers = 2 // No saturar si hay muchos núcleos, FFmpeg ya usa hilos
+	} else if numWorkers < 1 {
+		numWorkers = 1
+	}
+	fmt.Printf("👷 Iniciando pool de procesamiento con %d workers\n", numWorkers)
+	queue = processor.NewQueue(numWorkers)
 	defer queue.Close()
 
 	// Crear mux para manejar rutas
@@ -113,27 +152,49 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// handleDASHFiles sirve archivos DASH con los Content-Type correctos
+// handleDASHFiles sirve archivos DASH optimizados con RAM y sendfile
 func handleDASHFiles(w http.ResponseWriter, r *http.Request) {
 	filePath := "." + r.URL.Path
-
-	// Establecer Content-Type correcto según extensión
 	ext := filepath.Ext(filePath)
+
+	// Solo cacheamos segmentos (.m4s), no el manifiesto (.mpd) para evitar desincronización
+	if ext == ".m4s" {
+		cacheMutex.Lock()
+		if seg, exists := segmentCache[filePath]; exists {
+			seg.LastAccess = time.Now()
+			cacheMutex.Unlock()
+			w.Header().Set("X-Cache", "HIT-RAM")
+			w.Header().Set("Content-Type", "video/iso.segment")
+			w.Write(seg.Data)
+			return
+		}
+		cacheMutex.Unlock()
+
+		// Si no está en cache, leerlo y guardarlo
+		data, err := os.ReadFile(filePath)
+		if err == nil {
+			cacheMutex.Lock()
+			segmentCache[filePath] = &CachedSegment{
+				Data:       data,
+				LastAccess: time.Now(),
+			}
+			cacheMutex.Unlock()
+		}
+	}
+
+	// Establecer Content-Type correcto
 	switch ext {
 	case ".mpd":
 		w.Header().Set("Content-Type", "application/dash+xml")
+		w.Header().Set("Cache-Control", "no-cache")
 	case ".m4s":
 		w.Header().Set("Content-Type", "video/iso.segment")
+		w.Header().Set("Cache-Control", "public, max-age=31536000")
 	case ".mp4":
 		w.Header().Set("Content-Type", "video/mp4")
 	}
 
-	// Cache control para segmentos
-	w.Header().Set("Cache-Control", "public, max-age=31536000") // 1 año para segmentos
-	if ext == ".mpd" {
-		w.Header().Set("Cache-Control", "no-cache") // Manifiestos sin cache
-	}
-
+	// Usar http.ServeFile para activar 'sendfile' (Kernel a Tarjeta Red sin CPU)
 	http.ServeFile(w, r, filePath)
 }
 
@@ -179,16 +240,14 @@ func handleListVideos(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		dirName := dir.Name() // nombre sanitizado
+		dirName := dir.Name()
 		manifestPath := filepath.Join("processed", dirName, "manifest.mpd")
 
 		if _, err := os.Stat(manifestPath); err == nil {
 			v, exists := videoMap[dirName]
 			if !exists {
-				// El original fue borrado, pero el procesado existe
 				v = &VideoInfo{
-					Name: dirName, // Podríamos tratar de recuperar el nombre original pero el sanitizado sirve
-					// FileName: (ya no existe el original)
+					Name: dirName,
 				}
 				videoMap[dirName] = v
 			}
@@ -197,7 +256,6 @@ func handleListVideos(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Convertir mapa a slice
 	var videos []VideoInfo
 	for _, v := range videoMap {
 		videos = append(videos, *v)
@@ -214,7 +272,6 @@ func handleUploadVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Limitar a 2GB
 	r.ParseMultipartForm(2 << 30)
 
 	file, header, err := r.FormFile("video")
@@ -224,7 +281,6 @@ func handleUploadVideo(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Validar extensión
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	validExts := map[string]bool{".mp4": true, ".mkv": true, ".webm": true, ".avi": true, ".mov": true}
 	if !validExts[ext] {
@@ -232,7 +288,6 @@ func handleUploadVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Guardar archivo
 	dstPath := filepath.Join("Videos", header.Filename)
 	dst, err := os.Create(dstPath)
 	if err != nil {
@@ -248,7 +303,6 @@ func handleUploadVideo(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("📤 Video subido: %s (%d MB)\n", header.Filename, header.Size/(1024*1024))
 
-	// Auto-procesar el video
 	autoProcess := r.FormValue("auto_process")
 	if autoProcess == "true" {
 		name := strings.TrimSuffix(header.Filename, ext)
@@ -295,6 +349,7 @@ func handleProcessVideo(w http.ResponseWriter, r *http.Request) {
 	outputDir := filepath.Join("processed", sanitizeName(name))
 	jobID := fmt.Sprintf("job_%d", time.Now().UnixNano())
 
+
 	job := queue.Enqueue(jobID, inputPath, outputDir, req.FileName)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -333,7 +388,6 @@ func handleProcessAllVideos(w http.ResponseWriter, r *http.Request) {
 		outputDir := filepath.Join("processed", sanitizeName(name))
 		manifestPath := filepath.Join(outputDir, "manifest.mpd")
 
-		// Solo procesar si no existe el manifiesto
 		if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
 			inputPath := filepath.Join("Videos", file.Name())
 			jobID := fmt.Sprintf("job_%d", time.Now().UnixNano())
@@ -360,7 +414,6 @@ func handleListJobs(w http.ResponseWriter, r *http.Request) {
 
 // handleGetJob devuelve el estado de un trabajo específico
 func handleGetJob(w http.ResponseWriter, r *http.Request) {
-	// Extraer el ID del path: /api/jobs/{id}
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) < 4 {
 		jsonError(w, "ID de trabajo no proporcionado", http.StatusBadRequest)
@@ -427,11 +480,11 @@ func handleGetVideo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(VideoInfo{
-		Name:        name,
-		FileName:    videoName,
-		Size:        info.Size(),
-		IsProcessed: isProcessed,
-		ManifestURL: func() string { if isProcessed { return "/" + manifestPath }; return "" }(),
+		Name:         name,
+		FileName:     videoName,
+		Size:         info.Size(),
+		IsProcessed:  isProcessed,
+		ManifestURL:  func() string { if isProcessed { return "/" + manifestPath }; return "" }(),
 		DirectURL:    "/Videos/" + videoName,
 	})
 }
@@ -456,14 +509,12 @@ func handleDeleteVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Eliminar video original
 	videoPath := filepath.Join("Videos", req.FileName)
 	if err := os.Remove(videoPath); err != nil {
 		jsonError(w, "Error al eliminar el video: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Eliminar archivos procesados
 	name := strings.TrimSuffix(req.FileName, filepath.Ext(req.FileName))
 	processedDir := filepath.Join("processed", sanitizeName(name))
 	os.RemoveAll(processedDir)
