@@ -58,7 +58,6 @@
             overflow-x: hidden;
         }
 
-        /* ===== HEADER ===== */
         .app-header {
             background: var(--glass);
             backdrop-filter: blur(20px);
@@ -145,12 +144,6 @@
             color: white;
         }
 
-        .header-btn.primary:hover {
-            opacity: 0.9;
-            transform: translateY(-1px);
-        }
-
-        /* ===== MAIN LAYOUT ===== */
         .main-container {
             max-width: 1400px;
             margin: 0 auto;
@@ -167,7 +160,6 @@
             }
         }
 
-        /* ===== VIDEO PLAYER ===== */
         .player-section {
             display: flex;
             flex-direction: column;
@@ -223,7 +215,6 @@
             box-shadow: 0 0 60px rgba(108, 99, 255, 0.5);
         }
 
-        /* Quality Badge */
         .quality-badge {
             position: absolute;
             top: 16px;
@@ -238,54 +229,8 @@
             font-weight: 600;
             color: var(--accent-3);
             letter-spacing: 0.5px;
-            cursor: pointer;
-            transition: var(--transition);
         }
 
-        .quality-badge:hover {
-            background: rgba(108, 99, 255, 0.3);
-            border-color: var(--accent-1);
-        }
-
-        /* Quality Menu */
-        .quality-menu {
-            position: absolute;
-            top: 50px;
-            right: 16px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            padding: 8px 0;
-            min-width: 180px;
-            display: none;
-            z-index: 100;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-        }
-
-        .quality-menu.show {
-            display: block;
-        }
-
-        .quality-item {
-            padding: 10px 16px;
-            cursor: pointer;
-            font-size: 13px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: var(--transition);
-        }
-
-        .quality-item:hover {
-            background: var(--bg-hover);
-        }
-
-        .quality-item.active {
-            color: var(--accent-3);
-            background: rgba(108, 99, 255, 0.1);
-        }
-
-        /* Buffering Spinner */
         .buffering-indicator {
             position: absolute;
             inset: 0;
@@ -310,12 +255,9 @@
         }
 
         @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
+            to { transform: rotate(360deg); }
         }
 
-        /* ===== CONTROLS ===== */
         .player-controls {
             background: var(--bg-card);
             border: 1px solid var(--border);
@@ -324,7 +266,6 @@
             padding: 16px 20px;
         }
 
-        /* Progress Bar */
         .progress-container {
             display: flex;
             align-items: center;
@@ -352,9 +293,7 @@
             transition: height 0.15s ease;
         }
 
-        .progress-track:hover {
-            height: 8px;
-        }
+        .progress-track:hover { height: 8px; }
 
         .progress-buffer {
             position: absolute;
@@ -378,11 +317,6 @@
             transition: none;
         }
 
-        .progress-track:hover .progress-fill {
-            box-shadow: 0 0 10px rgba(108, 99, 255, 0.5);
-        }
-
-        /* Button Row */
         .controls-row {
             display: flex;
             align-items: center;
@@ -431,7 +365,6 @@
             box-shadow: 0 4px 30px rgba(108, 99, 255, 0.5);
         }
 
-        /* Volume Slider */
         .volume-group {
             display: flex;
             align-items: center;
@@ -459,11 +392,8 @@
             transition: transform 0.15s ease;
         }
 
-        .volume-slider::-webkit-slider-thumb:hover {
-            transform: scale(1.3);
-        }
+        .volume-slider::-webkit-slider-thumb:hover { transform: scale(1.3); }
 
-        /* Video Title */
         .now-playing {
             padding: 16px 20px;
             background: var(--bg-secondary);
@@ -493,14 +423,12 @@
             gap: 5px;
         }
 
-        /* ===== SIDEBAR ===== */
         .sidebar {
             display: flex;
             flex-direction: column;
             gap: 16px;
         }
 
-        /* Upload Section */
         .upload-zone {
             background: var(--bg-card);
             border: 2px dashed var(--border);
@@ -511,8 +439,7 @@
             cursor: pointer;
         }
 
-        .upload-zone:hover,
-        .upload-zone.dragover {
+        .upload-zone:hover, .upload-zone.dragover {
             border-color: var(--accent-1);
             background: rgba(108, 99, 255, 0.05);
         }
@@ -533,7 +460,6 @@
             font-weight: 600;
         }
 
-        /* Playlist Panel */
         .playlist-panel {
             background: var(--bg-card);
             border: 1px solid var(--border);
@@ -599,9 +525,7 @@
             transition: var(--transition);
         }
 
-        .playlist-item:hover {
-            background: var(--bg-hover);
-        }
+        .playlist-item:hover { background: var(--bg-hover); }
 
         .playlist-item.active {
             background: rgba(108, 99, 255, 0.1);
@@ -671,12 +595,6 @@
             color: #f97316;
         }
 
-        .tag.processing {
-            background: rgba(245, 158, 11, 0.15);
-            color: var(--warning);
-        }
-
-        /* Process Button */
         .process-btn {
             padding: 4px 10px;
             background: transparent;
@@ -695,7 +613,6 @@
             border-color: var(--accent-3);
         }
 
-        /* Status Bar */
         .status-bar {
             background: var(--bg-card);
             border: 1px solid var(--border);
@@ -738,7 +655,6 @@
             margin-top: 2px;
         }
 
-        /* Toast Notifications */
         .toast-container {
             position: fixed;
             bottom: 24px;
@@ -764,53 +680,21 @@
             max-width: 400px;
         }
 
-        .toast.success {
-            border-left: 3px solid var(--success);
-        }
-
-        .toast.error {
-            border-left: 3px solid var(--danger);
-        }
-
-        .toast.info {
-            border-left: 3px solid var(--accent-1);
-        }
+        .toast.success { border-left: 3px solid var(--success); }
+        .toast.error { border-left: 3px solid var(--danger); }
+        .toast.info { border-left: 3px solid var(--accent-1); }
 
         @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
         }
 
-        /* Scrollbar */
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--border);
-            border-radius: 3px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--text-muted);
-        }
-
-        /* Fullscreen adjustments */
-        .video-wrapper:fullscreen {
-            border-radius: 0;
-        }
-
+        .video-wrapper:fullscreen { border-radius: 0; }
         .video-wrapper:fullscreen .player-controls {
             position: absolute;
             bottom: 0;
@@ -819,55 +703,77 @@
             border-radius: 0;
             z-index: 20;
         }
+
+        .quality-menu {
+            position: absolute;
+            bottom: 60px;
+            right: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 8px;
+            width: 180px;
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 1000;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+        }
+
+        .quality-menu.show { display: flex; }
+
+        .quality-item {
+            padding: 8px 12px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: var(--transition);
+        }
+
+        .quality-item:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .quality-item.active {
+            color: var(--accent-1);
+            background: rgba(108, 99, 255, 0.1);
+        }
+
+        .quality-item i { font-size: 10px; display: none; }
+        .quality-item.active i { display: block; }
     </style>
 </head>
 
 <body>
-    <!-- HEADER -->
-    <header class="app-header" id="appHeader">
+    <header class="app-header">
         <div class="logo">
             <div class="logo-icon"><i class="fas fa-bolt"></i></div>
             <span class="logo-text">StreamDaveFast</span>
             <span class="logo-badge">Ultra</span>
         </div>
         <div class="header-actions">
-            <button class="header-btn" id="uploadBtn" title="Subir video">
-                <i class="fas fa-cloud-arrow-up"></i> Subir
-            </button>
-            <button class="header-btn" id="processAllBtn" title="Procesar todos los videos">
-                <i class="fas fa-wand-magic-sparkles"></i> Procesar Todos
-            </button>
+            <button class="header-btn" id="uploadBtn"><i class="fas fa-cloud-arrow-up"></i> Subir</button>
+            <button class="header-btn" id="processAllBtn"><i class="fas fa-wand-magic-sparkles"></i> Procesar Todos</button>
         </div>
     </header>
 
-    <!-- MAIN CONTENT -->
     <main class="main-container">
-        <!-- PLAYER -->
         <div class="player-section">
             <div class="video-wrapper" id="videoWrapper">
                 <video id="video" preload="metadata" playsinline></video>
-
-                <div class="quality-badge" id="qualityBadge">
-                    <i class="fas fa-signal"></i> Auto
-                </div>
-
-                <!-- Quality Menu -->
-                <div class="quality-menu" id="qualityMenu">
-                    <div class="quality-item active">Auto (Inteligente) <i class="fas fa-check"></i></div>
-                </div>
-
+                <div class="quality-badge" id="qualityBadge"><i class="fas fa-signal"></i> Auto</div>
                 <div class="video-overlay" id="overlay">
-                    <div class="play-big">
-                        <i class="fas fa-play" style="margin-left: 3px;"></i>
-                    </div>
+                    <div class="play-big"><i class="fas fa-play" style="margin-left: 3px;"></i></div>
                 </div>
-
-                <div class="buffering-indicator" id="bufferingIndicator">
-                    <div class="spinner"></div>
-                </div>
+                <div class="buffering-indicator" id="bufferingIndicator"><div class="spinner"></div></div>
             </div>
 
-            <!-- CONTROLS -->
             <div class="player-controls">
                 <div class="progress-container">
                     <span class="time-display" id="currentTime">0:00</span>
@@ -877,35 +783,30 @@
                     </div>
                     <span class="time-display" id="duration">0:00</span>
                 </div>
-
                 <div class="controls-row">
                     <div class="controls-group">
-                        <button class="ctrl-btn" id="prevBtn" title="Anterior"><i
-                                class="fas fa-backward-step"></i></button>
-                        <button class="ctrl-btn" id="backBtn" title="Retroceder 10s"><i
-                                class="fas fa-rotate-left"></i></button>
+                        <button class="ctrl-btn" id="prevBtn"><i class="fas fa-backward-step"></i></button>
+                        <button class="ctrl-btn" id="backBtn"><i class="fas fa-rotate-left"></i></button>
                         <button class="ctrl-btn play-main" id="playBtn"><i class="fas fa-play"></i></button>
-                        <button class="ctrl-btn" id="forwardBtn" title="Avanzar 10s"><i
-                                class="fas fa-rotate-right"></i></button>
-                        <button class="ctrl-btn" id="nextBtn" title="Siguiente"><i
-                                class="fas fa-forward-step"></i></button>
+                        <button class="ctrl-btn" id="forwardBtn"><i class="fas fa-rotate-right"></i></button>
+                        <button class="ctrl-btn" id="nextBtn"><i class="fas fa-forward-step"></i></button>
                     </div>
-
                     <div class="controls-group">
                         <div class="volume-group">
                             <button class="ctrl-btn" id="volumeBtn"><i class="fas fa-volume-high"></i></button>
-                            <input type="range" class="volume-slider" id="volumeSlider" min="0" max="1" step="0.05"
-                                value="0.7">
+                            <input type="range" class="volume-slider" id="volumeSlider" min="0" max="1" step="0.05" value="0.7">
                         </div>
-                        <button class="ctrl-btn" id="speedBtn" title="Velocidad">1x</button>
-                        <button class="ctrl-btn" id="fullscreenBtn" title="Pantalla completa"><i
-                                class="fas fa-expand"></i></button>
+                        <button class="ctrl-btn" id="speedBtn">1x</button>
+                        <div style="position: relative;">
+                            <button class="ctrl-btn" id="qualityBtn"><i class="fas fa-gear"></i></button>
+                            <div class="quality-menu" id="qualityMenu"></div>
+                        </div>
+                        <button class="ctrl-btn" id="fullscreenBtn"><i class="fas fa-expand"></i></button>
                     </div>
                 </div>
             </div>
 
-            <!-- Now Playing -->
-            <div class="now-playing" id="nowPlaying">
+            <div class="now-playing">
                 <div class="now-playing-title" id="nowPlayingTitle">Selecciona un video para comenzar</div>
                 <div class="now-playing-meta">
                     <span id="nowPlayingQuality"><i class="fas fa-signal"></i> —</span>
@@ -915,73 +816,43 @@
             </div>
         </div>
 
-        <!-- SIDEBAR -->
         <aside class="sidebar">
-            <!-- Upload Zone -->
             <div class="upload-zone" id="uploadZone">
                 <i class="fas fa-cloud-arrow-up"></i>
                 <p>Arrastra un video aquí o <span class="accent">haz clic para subir</span></p>
-                <p style="margin-top: 6px; font-size: 11px; color: var(--text-muted);">MP4, MKV, WebM, AVI, MOV · Máx
-                    2GB</p>
+                <p style="margin-top: 6px; font-size: 11px; color: var(--text-muted);">MP4, MKV, WebM, AVI, MOV · Máx 2GB</p>
             </div>
 
-            <!-- Status -->
             <div class="status-bar">
                 <div class="status-bar-title">Estadísticas en vivo</div>
                 <div class="stats-grid">
-                    <div class="stat-item">
-                        <div class="stat-value" id="statsQuality">—</div>
-                        <div class="stat-label">Calidad</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value" id="statsBitrate">—</div>
-                        <div class="stat-label">Bitrate</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value" id="statsBuffer">—</div>
-                        <div class="stat-label">Buffer</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value" id="statsDropped">0</div>
-                        <div class="stat-label">Frames perdidos</div>
-                    </div>
+                    <div class="stat-item"><div class="stat-value" id="statsQuality">—</div><div class="stat-label">Calidad</div></div>
+                    <div class="stat-item"><div class="stat-value" id="statsBitrate">—</div><div class="stat-label">Bitrate</div></div>
+                    <div class="stat-item"><div class="stat-value" id="statsBuffer">—</div><div class="stat-label">Buffer</div></div>
+                    <div class="stat-item"><div class="stat-value" id="statsDropped">0</div><div class="stat-label">Frames perdidos</div></div>
                 </div>
             </div>
 
-            <!-- Playlist -->
             <div class="playlist-panel">
                 <div class="panel-header">
-                    <span class="panel-title">
-                        <i class="fas fa-list"></i> Biblioteca
-                        <span class="panel-count" id="videoCount">0</span>
-                    </span>
+                    <span class="panel-title"><i class="fas fa-list"></i> Biblioteca <span class="panel-count" id="videoCount">0</span></span>
                     <button class="panel-action" id="refreshBtn"><i class="fas fa-arrows-rotate"></i> Refrescar</button>
                 </div>
-                <div class="playlist-items" id="playlistItems">
-                    <!-- Se generan dinámicamente -->
-                </div>
+                <div class="playlist-items" id="playlistItems"></div>
             </div>
         </aside>
     </main>
 
-    <!-- Hidden file input -->
-    <input type="file" id="fileInput" accept="video/*" class="hidden" style="display:none;">
-
-    <!-- Toast Container -->
+    <input type="file" id="fileInput" accept="video/*" style="display:none;">
     <div class="toast-container" id="toastContainer"></div>
 
     <script>
-        // ============================================================
-        // StreamDaveFast Ultra – Shaka Player + Adaptive Bitrate Engine
-        // ============================================================
-
         let shakaPlayer = null;
         let currentVideoIndex = -1;
         let videoList = [];
         let playbackSpeed = 1;
         const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-        // DOM Elements
         const v = document.getElementById('video');
         const playBtn = document.getElementById('playBtn');
         const backBtn = document.getElementById('backBtn');
@@ -1000,6 +871,7 @@
         const durationEl = document.getElementById('duration');
         const qualityBadge = document.getElementById('qualityBadge');
         const qualityMenu = document.getElementById('qualityMenu');
+        const qualityBtn = document.getElementById('qualityBtn');
         const playlistItems = document.getElementById('playlistItems');
         const videoCount = document.getElementById('videoCount');
         const nowPlayingTitle = document.getElementById('nowPlayingTitle');
@@ -1013,14 +885,11 @@
         const refreshBtn = document.getElementById('refreshBtn');
         const fileInput = document.getElementById('fileInput');
         const videoWrapper = document.getElementById('videoWrapper');
-
-        // Stats
         const statsQuality = document.getElementById('statsQuality');
         const statsBitrate = document.getElementById('statsBitrate');
         const statsBuffer = document.getElementById('statsBuffer');
         const statsDropped = document.getElementById('statsDropped');
 
-        // ================ INIT ================
         async function initApp() {
             shaka.polyfill.installAll();
             if (!shaka.Player.isBrowserSupported()) {
@@ -1033,76 +902,50 @@
 
         async function initShakaPlayer() {
             shakaPlayer = new shaka.Player(v);
-
-            // Configuración profesional para streaming ultrarrápido
             shakaPlayer.configure({
                 streaming: {
                     bufferingGoal: 30,
-                    rebufferingGoal: 5,
+                    rebufferingGoal: 10,
                     bufferBehind: 20,
-                    retryParameters: {
-                        maxAttempts: 5,
-                        baseDelay: 500,
-                        backoffFactor: 1.5,
-                        fuzzFactor: 0.5,
-                    },
-                    failureCallback: (error) => {
-                        console.warn('Streaming failure:', error);
-                    },
+                    retryParameters: { maxAttempts: 5, baseDelay: 500, backoffFactor: 1.5, fuzzFactor: 0.5 },
+                    failureCallback: (error) => console.warn('Streaming failure:', error),
                     smallGapLimit: 0.5,
                     jumpLargeGaps: true,
                 },
                 abr: {
                     enabled: true,
                     defaultBandwidthEstimate: 500000,
-                    switchInterval: 4,
+                    switchInterval: 1,
                     bandwidthUpgradeTarget: 0.85,
                     bandwidthDowngradeTarget: 0.5,
                 },
                 manifest: {
-                    retryParameters: {
-                        maxAttempts: 4,
-                        baseDelay: 1000,
-                        backoffFactor: 2,
-                    },
-                    dash: {
-                        ignoreMinBufferTime: true,
-                    },
+                    retryParameters: { maxAttempts: 4, baseDelay: 1000, backoffFactor: 2 },
+                    dash: { ignoreMinBufferTime: true },
                 },
             });
-
             shakaPlayer.addEventListener('error', onShakaError);
             shakaPlayer.addEventListener('adaptation', onAdaptation);
+            shakaPlayer.addEventListener('variantchanged', onAdaptation);
             shakaPlayer.addEventListener('buffering', onBuffering);
         }
 
-        // ================ PLAYLIST ================
         async function loadPlaylist() {
             try {
                 const response = await fetch('/api/videos');
                 videoList = await response.json();
-
                 if (!videoList || videoList.length === 0) {
-                    playlistItems.innerHTML = `
-                        <div style="padding: 40px 20px; text-align: center; color: var(--text-muted);">
-                            <i class="fas fa-video-slash" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>
-                            <p>No hay videos. Sube uno para comenzar.</p>
-                        </div>`;
+                    playlistItems.innerHTML = `<div style="padding: 40px 20px; text-align: center; color: var(--text-muted);"><i class="fas fa-video-slash" style="font-size: 24px; margin-bottom: 10px; display: block;"></i><p>No hay videos. Sube uno para comenzar.</p></div>`;
                     videoCount.textContent = '0';
                     return;
                 }
-
                 playlistItems.innerHTML = '';
                 videoList.forEach((video, index) => {
                     const item = createPlaylistItem(video, index);
                     playlistItems.appendChild(item);
                 });
-
                 videoCount.textContent = videoList.length;
-
-                if (videoList.length > 0) {
-                    selectVideo(0);
-                }
+                if (videoList.length > 0) selectVideo(0);
             } catch (e) {
                 console.error('Error cargando playlist:', e);
                 showToast('Error cargando la biblioteca de videos', 'error');
@@ -1113,61 +956,34 @@
             const item = document.createElement('div');
             item.className = 'playlist-item';
             item.dataset.index = index;
-
             const iconClass = video.is_processed ? 'dash' : 'raw';
             const iconName = video.is_processed ? 'fa-bolt' : 'fa-film';
             const tagText = video.is_processed ? 'DASH' : 'MP4';
             const tagClass = video.is_processed ? 'dash' : 'raw';
             const meta = video.is_processed ? 'Adaptativo · Multi-calidad' : formatFileSize(video.size);
-
             let processBtn = '';
             if (!video.is_processed) {
                 const safeFileName = video.file_name.replace(/'/g, "\\'");
-                processBtn = `<button class="process-btn" onclick="event.stopPropagation(); processVideo('${safeFileName}')" title="Procesar a DASH">
-                    <i class="fas fa-wand-magic-sparkles"></i>
-                </button>`;
+                processBtn = `<button class="process-btn" onclick="event.stopPropagation(); processVideo('${safeFileName}')"><i class="fas fa-wand-magic-sparkles"></i></button>`;
             }
-
-            item.innerHTML = `
-                <div class="playlist-item-icon ${iconClass}">
-                    <i class="fas ${iconName}"></i>
-                </div>
-                <div class="playlist-item-info">
-                    <div class="playlist-item-name">${video.name}</div>
-                    <div class="playlist-item-meta">
-                        <span class="tag ${tagClass}">${tagText}</span>
-                        ${meta}
-                    </div>
-                </div>
-                ${processBtn}
-            `;
-
+            item.innerHTML = `<div class="playlist-item-icon ${iconClass}"><i class="fas ${iconName}"></i></div><div class="playlist-item-info"><div class="playlist-item-name">${video.name}</div><div class="playlist-item-meta"><span class="tag ${tagClass}">${tagText}</span>${meta}</div></div>${processBtn}`;
             item.addEventListener('click', () => selectVideo(index));
             return item;
         }
 
-        // ================ VIDEO LOADING ================
         async function selectVideo(index) {
             if (index < 0 || index >= videoList.length) return;
-
             currentVideoIndex = index;
             const video = videoList[index];
-
-            document.querySelectorAll('.playlist-item').forEach((el, i) => {
-                el.classList.toggle('active', i === index);
-            });
-
+            document.querySelectorAll('.playlist-item').forEach((el, i) => el.classList.toggle('active', i === index));
             nowPlayingTitle.textContent = video.name;
-
             try {
                 if (video.is_processed && video.manifest_url) {
-                    // Cargar DASH con Shaka Player
                     const manifestUrl = encodeURI(video.manifest_url);
                     await shakaPlayer.load(manifestUrl);
                     qualityBadge.innerHTML = '<i class="fas fa-signal"></i> Auto';
                     showToast(`Reproduciendo: ${video.name} (DASH Adaptativo)`, 'success');
                 } else {
-                    // Cargar video directo (encode URI para nombres con espacios)
                     await shakaPlayer.unload();
                     const directUrl = encodeURI(video.direct_url);
                     v.src = directUrl;
@@ -1182,7 +998,6 @@
             }
         }
 
-        // ================ PLAYBACK CONTROLS ================
         const fmt = t => {
             if (!t || isNaN(t)) return '0:00';
             const h = Math.floor(t / 3600);
@@ -1194,39 +1009,11 @@
 
         const setIcon = (el, icon) => el.innerHTML = `<i class="fas fa-${icon}"></i>`;
 
-        function play() {
-            v.play();
-            setIcon(playBtn, 'pause');
-            overlay.style.display = 'none';
-        }
-
-        function pause() {
-            v.pause();
-            setIcon(playBtn, 'play');
-        }
-
-        function toggle() {
-            v.paused ? play() : pause();
-        }
-
-        function stop() {
-            v.pause();
-            v.currentTime = 0;
-            setIcon(playBtn, 'play');
-            overlay.style.display = 'flex';
-        }
-
-        function playNext() {
-            if (currentVideoIndex < videoList.length - 1) {
-                selectVideo(currentVideoIndex + 1);
-            }
-        }
-
-        function playPrev() {
-            if (currentVideoIndex > 0) {
-                selectVideo(currentVideoIndex - 1);
-            }
-        }
+        function play() { v.play(); setIcon(playBtn, 'pause'); overlay.style.display = 'none'; }
+        function pause() { v.pause(); setIcon(playBtn, 'play'); }
+        function toggle() { v.paused ? play() : pause(); }
+        function playNext() { if (currentVideoIndex < videoList.length - 1) selectVideo(currentVideoIndex + 1); }
+        function playPrev() { if (currentVideoIndex > 0) selectVideo(currentVideoIndex - 1); }
 
         function cycleSpeed() {
             const currentIdx = speeds.indexOf(playbackSpeed);
@@ -1246,7 +1033,6 @@
             }
         }
 
-        // ================ EVENT LISTENERS ================
         playBtn.onclick = toggle;
         overlay.onclick = toggle;
         backBtn.onclick = () => v.currentTime = Math.max(0, v.currentTime - 10);
@@ -1256,16 +1042,8 @@
         speedBtn.onclick = cycleSpeed;
         fullscreenBtn.onclick = fullscreen;
 
-        volumeSlider.oninput = () => {
-            v.volume = parseFloat(volumeSlider.value);
-            v.muted = false;
-            updateVolumeIcon();
-        };
-
-        volumeBtn.onclick = () => {
-            v.muted = !v.muted;
-            updateVolumeIcon();
-        };
+        volumeSlider.oninput = () => { v.volume = parseFloat(volumeSlider.value); v.muted = false; updateVolumeIcon(); };
+        volumeBtn.onclick = () => { v.muted = !v.muted; updateVolumeIcon(); };
 
         function updateVolumeIcon() {
             if (v.muted || v.volume === 0) setIcon(volumeBtn, 'volume-xmark');
@@ -1273,43 +1051,31 @@
             else setIcon(volumeBtn, 'volume-high');
         }
 
-        // Progress click
         progressBar.onclick = e => {
             const rect = progressBar.getBoundingClientRect();
             const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
             v.currentTime = ratio * (v.duration || 0);
         };
 
-        // Video ended
         v.addEventListener('ended', () => {
             setIcon(playBtn, 'play');
-            // Auto-reproducir siguiente
-            if (currentVideoIndex < videoList.length - 1) {
-                setTimeout(() => playNext(), 1500);
-            }
+            if (currentVideoIndex < videoList.length - 1) setTimeout(() => playNext(), 1500);
         });
 
-        // ================ UI UPDATE LOOP ================
         setInterval(() => {
             if (v.duration) {
-                // Progress
                 progressFill.style.width = (v.currentTime / v.duration * 100) + '%';
                 currentTimeEl.textContent = fmt(v.currentTime);
                 durationEl.textContent = fmt(v.duration);
-
-                // Buffer bar
                 if (v.buffered.length > 0) {
                     try {
                         const buffered = v.buffered.end(v.buffered.length - 1);
                         progressBuffer.style.width = (buffered / v.duration * 100) + '%';
-
                         const bufferAhead = Math.max(0, buffered - v.currentTime);
                         statsBuffer.textContent = Math.round(bufferAhead) + 's';
                         nowPlayingBuffer.innerHTML = `<i class="fas fa-database"></i> Buffer: ${Math.round(bufferAhead)}s`;
                     } catch (e) { }
                 }
-
-                // Dropped frames
                 if (v.getVideoPlaybackQuality) {
                     const q = v.getVideoPlaybackQuality();
                     statsDropped.textContent = q.droppedVideoFrames || 0;
@@ -1317,7 +1083,6 @@
             }
         }, 250);
 
-        // ================ SHAKA EVENTS ================
         function onAdaptation() {
             if (!shakaPlayer) return;
             const tracks = shakaPlayer.getVariantTracks();
@@ -1325,94 +1090,46 @@
             if (active) {
                 const quality = active.height + 'p';
                 const bitrate = (active.bandwidth / 1000).toFixed(0);
-
                 qualityBadge.innerHTML = `<i class="fas fa-signal"></i> ${quality}`;
                 nowPlayingQuality.innerHTML = `<i class="fas fa-signal"></i> ${quality}`;
                 nowPlayingBitrate.innerHTML = `<i class="fas fa-gauge-high"></i> ${bitrate} kbps`;
-
                 statsQuality.textContent = quality;
                 statsBitrate.textContent = bitrate + 'k';
             }
         }
 
-        function onBuffering(event) {
-            bufferingIndicator.classList.toggle('active', event.buffering);
-        }
+        function onBuffering(event) { bufferingIndicator.classList.toggle('active', event.buffering); }
+        function onShakaError(event) { showToast('Error de reproducción: ' + event.detail.code, 'error'); }
 
-        function onShakaError(event) {
-            console.error('Shaka Error:', event.detail);
-            showToast('Error de reproducción: ' + event.detail.code, 'error');
-        }
-
-        // ================ UPLOAD ================
         uploadBtn.onclick = () => fileInput.click();
         uploadZone.onclick = () => fileInput.click();
-
-        // Drag & drop
-        uploadZone.addEventListener('dragover', e => {
-            e.preventDefault();
-            uploadZone.classList.add('dragover');
-        });
+        uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
         uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
-        uploadZone.addEventListener('drop', e => {
-            e.preventDefault();
-            uploadZone.classList.remove('dragover');
-            if (e.dataTransfer.files.length) {
-                uploadFile(e.dataTransfer.files[0]);
-            }
-        });
-
-        fileInput.onchange = e => {
-            if (e.target.files.length) {
-                uploadFile(e.target.files[0]);
-            }
-        };
+        uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('dragover'); if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]); });
+        fileInput.onchange = e => { if (e.target.files.length) uploadFile(e.target.files[0]); };
 
         async function uploadFile(file) {
             const formData = new FormData();
             formData.append('video', file);
             formData.append('auto_process', 'true');
-
             showToast(`Subiendo: ${file.name}...`, 'info');
-
             try {
-                const response = await fetch('/api/upload', {
-                    method: 'POST',
-                    body: formData,
-                });
+                const response = await fetch('/api/upload', { method: 'POST', body: formData });
                 const result = await response.json();
-                if (result.error) {
-                    showToast(result.error, 'error');
-                } else {
-                    showToast(`✅ ${file.name} subido y encolado para procesamiento`, 'success');
-                    setTimeout(loadPlaylist, 1000);
-                }
-            } catch (e) {
-                showToast('Error al subir el archivo', 'error');
-            }
+                if (result.error) showToast(result.error, 'error');
+                else { showToast(`✅ ${file.name} subido y encolado para procesamiento`, 'success'); setTimeout(loadPlaylist, 1000); }
+            } catch (e) { showToast('Error al subir el archivo', 'error'); }
         }
 
-        // ================ PROCESS ================
         async function processVideo(fileName) {
             showToast(`Procesando: ${fileName}...`, 'info');
             try {
-                const response = await fetch('/api/process', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ file_name: fileName }),
-                });
+                const response = await fetch('/api/process', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file_name: fileName }) });
                 const result = await response.json();
-                if (result.error) {
-                    showToast(result.error, 'error');
-                } else {
-                    showToast(`📋 ${fileName} encolado para transcodificación DASH`, 'success');
-                    // Poll para actualizar cuando termine
-                    pollJobStatus(result.job_id);
-                }
-            } catch (e) {
-                showToast('Error al procesar video', 'error');
-            }
-        }
+                if (result.error) showToast(result.error, 'error');
+                else { showToast(`📋 ${fileName} encolado para transcodificación DASH`, 'success'); pollJobStatus(result.job_id); }
+            } catch showToast('Error al procesar video', 'error'); }
+ (e) {        }
 
         processAllBtn.onclick = async () => {
             try {
@@ -1420,20 +1137,14 @@
                 const result = await response.json();
                 showToast(`🚀 ${result.count} videos encolados para procesamiento`, 'info');
                 if (result.count > 0) {
-                    // Poll periódicamente
                     const pollInterval = setInterval(async () => {
                         await loadPlaylist();
                         const jobs = await (await fetch('/api/jobs')).json();
                         const pending = jobs.filter(j => j.status === 'queued' || j.status === 'processing');
-                        if (pending.length === 0) {
-                            clearInterval(pollInterval);
-                            showToast('✅ Todos los videos han sido procesados', 'success');
-                        }
+                        if (pending.length === 0) { clearInterval(pollInterval); showToast('✅ Todos los videos han sido procesados', 'success'); }
                     }, 5000);
                 }
-            } catch (e) {
-                showToast('Error al procesar videos', 'error');
-            }
+            } catch (e) { showToast('Error al procesar videos', 'error'); }
         };
 
         async function pollJobStatus(jobId) {
@@ -1441,27 +1152,14 @@
                 try {
                     const response = await fetch(`/api/jobs/${jobId}`);
                     const job = await response.json();
-                    if (job.status === 'completed') {
-                        clearInterval(interval);
-                        showToast(`✅ ${job.video_name} procesado exitosamente`, 'success');
-                        loadPlaylist();
-                    } else if (job.status === 'failed') {
-                        clearInterval(interval);
-                        showToast(`❌ Error procesando ${job.video_name}`, 'error');
-                    }
-                } catch (e) {
-                    clearInterval(interval);
-                }
+                    if (job.status === 'completed') { clearInterval(interval); showToast(`✅ ${job.video_name} procesado exitosamente`, 'success'); loadPlaylist(); }
+                    else if (job.status === 'failed') { clearInterval(interval); showToast(`❌ Error procesando ${job.video_name}`, 'error'); }
+                } catch (e) { clearInterval(interval); }
             }, 3000);
         }
 
-        // Refresh
-        refreshBtn.onclick = () => {
-            loadPlaylist();
-            showToast('Biblioteca actualizada', 'info');
-        };
+        refreshBtn.onclick = () => { loadPlaylist(); showToast('Biblioteca actualizada', 'info'); };
 
-        // ================ KEYBOARD SHORTCUTS ================
         document.onkeydown = e => {
             if (e.target.tagName === 'INPUT') return;
             switch (e.code) {
@@ -1475,7 +1173,6 @@
             }
         };
 
-        // ================ UTILITIES ================
         function formatFileSize(bytes) {
             if (!bytes) return '';
             if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + ' GB';
@@ -1487,59 +1184,29 @@
             const container = document.getElementById('toastContainer');
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
-
             const icons = { success: 'check-circle', error: 'circle-exclamation', info: 'circle-info' };
             toast.innerHTML = `<i class="fas fa-${icons[type] || icons.info}"></i> ${message}`;
             container.appendChild(toast);
-
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateX(100%)';
-                toast.style.transition = '0.3s ease';
-                setTimeout(() => toast.remove(), 300);
-            }, 4000);
+            setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateX(100%)'; setTimeout(() => toast.remove(), 300); }, 4000);
         }
 
-        // ================ INIT ================
         document.addEventListener('DOMContentLoaded', initApp);
-        // ================ QUALITY SELECTION ================
-        qualityBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            updateQualityMenu();
-            qualityMenu.classList.toggle('show');
-        });
 
-        document.addEventListener('click', () => {
-            qualityMenu.classList.remove('show');
-        });
+        qualityBtn.addEventListener('click', (e) => { e.stopPropagation(); updateQualityMenu(); qualityMenu.classList.toggle('show'); });
+        document.addEventListener('click', () => qualityMenu.classList.remove('show'));
 
         function updateQualityMenu() {
             if (!shakaPlayer) return;
-
             const tracks = shakaPlayer.getVariantTracks();
             const config = shakaPlayer.getConfiguration();
             const isAuto = config.abr.enabled;
-
-            // Ordenar por altura desc
             tracks.sort((a, b) => b.height - a.height);
-
-            qualityMenu.innerHTML = `
-                <div class="quality-item ${isAuto ? 'active' : ''}" onclick="setQuality('auto')">
-                    Auto (Inteligente) <i class="fas fa-check"></i>
-                </div>
-                <div style="height: 1px; background: var(--border); margin: 4px 0;"></div>
-            `;
-
-            // Filtrar duplicados de altura (a veces Shaka da varios tracks por resolución)
+            qualityMenu.innerHTML = `<div class="quality-item ${isAuto ? 'active' : ''}" onclick="setQuality('auto')">Auto (Inteligente) <i class="fas fa-check"></i></div><div style="height: 1px; background: var(--border); margin: 4px 0;"></div>`;
             const seenHeights = new Set();
             tracks.forEach(track => {
                 if (track.height && !seenHeights.has(track.height)) {
                     const isActive = !isAuto && track.active;
-                    qualityMenu.innerHTML += `
-                        <div class="quality-item ${isActive ? 'active' : ''}" onclick="setQuality(${track.id})">
-                            ${track.height}p <i class="fas fa-check"></i>
-                        </div>
-                    `;
+                    qualityMenu.innerHTML += `<div class="quality-item ${isActive ? 'active' : ''}" onclick="setQuality(${track.id})">${track.height}p <i class="fas fa-check"></i></div>`;
                     seenHeights.add(track.height);
                 }
             });
@@ -1554,19 +1221,11 @@
                 shakaPlayer.configure({ abr: { enabled: false } });
                 const tracks = shakaPlayer.getVariantTracks();
                 const track = tracks.find(t => t.id === trackId);
-                if (track) {
-                    shakaPlayer.selectVariantTrack(track, true);
-                    qualityBadge.innerHTML = `<i class="fas fa-signal"></i> ${track.height}p`;
-                    showToast(`Calidad fijada: ${track.height}p`, 'info');
-                }
+                if (track) { shakaPlayer.selectVariantTrack(track, true); qualityBadge.innerHTML = `<i class="fas fa-signal"></i> ${track.height}p`; showToast(`Calidad fijada: ${track.height}p`, 'info'); }
             }
+            onAdaptation();
             qualityMenu.classList.remove('show');
         };
-
-        // Cerrar al ocultarse el mouse
-        let menuTimeout;
-        qualityMenu.addEventListener('mouseenter', () => clearTimeout(menuTimeout));
     </script>
 </body>
-
 </html>
