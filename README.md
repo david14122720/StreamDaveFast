@@ -44,14 +44,15 @@ StreamDaveFast es el primer paso hacia una plataforma de streaming profesional. 
 ### Escalera de Bitrate (Transcodificación FFmpeg)
 | Calidad | Resolución | Video Bitrate | Profile/Level | VBV (Max/Buf) | CRF |
 |---------|-----------|---------------|---------------|---------------|-----|
-| 144p | 256x144 | 150 kbps | Main 4.0 | 180k / 300k | 20 |
-| 240p | 426×240 | 350 kbps | Main 4.0 | 420k / 700k | 20 |
-| 480p | 854×480 | 1,200 kbps | Main 4.0 | 1.4M / 2.4M | 20 |
-| 720p | 1280×720 | 2,500 kbps | Main 4.0 | 3.0M / 5.0M | 20 |
-| 1080p 🔥 | 1920×1080| 4,500 kbps| **High 4.1** | **5.0M / 10M** | **18** |
+| 144p | 256x144 | 200 kbps | Main 4.0 | 300k / 600k | 20 |
+| 240p | 426×240 | 400 kbps | Main 4.0 | 600k / 1.2M | 20 |
+| 480p | 854×480 | 1,500 kbps | Main 4.0 | 2.2M / 4.5M | 20 |
+| 720p | 1280×720 | 3,000 kbps | Main 4.0 | 4.5M / 9.0M | 20 |
+| 1080p 🔥 | 1920×1080| 5,000 kbps| **High 4.1** | **6.0M / 12M** | **18** |
 
-*   **Aceleración por Hardware**: Detección automática de VAAPI (Intel), QSV, y NVENC (NVIDIA) para transcodificación 5-10x más rápida.
-*   **Sincronización A/V**: Filtros `aresample=async=1` y `-force_key_frames` cada 5s para evitar desincronización de audio.
+*   **Escalado Inteligente**: Usa `force_divisible_by=2` para evitar errores de codec con resoluciones impares.
+*   **Filtro Lanczos**: Mejor calidad de escalado que el algoritmo por defecto.
+*   **VBV Optimizado**: Mayor margen (50%) y buffer (3s) para evitar underflow en escenas de acción.
 *   **FPS Nativos**: Detección dinámica de frames (23.98, 24, 30, 60fps) respetando la cadencia original.
 *   **GOP Controlado**: `-x264-params "keyint=120:min-keyint=120"` para alineación perfecta de segmentos DASH.
 *   **Audio CBR**: AAC a 128kbps constante y 48kHz para evitar "gaps" de silencio entre segmentos.
@@ -70,10 +71,17 @@ StreamDaveFast es el primer paso hacia una plataforma de streaming profesional. 
 | Componente | Tecnología | Detalle de Implementación |
 |-----------|-----------|-----------|
 | **Backend** | Go (Golang) | Servidor multi-hilo, LRU Cache en RAM |
-| **Transcodificación** | FFmpeg (libx264/VAAPI/QSV/NVENC) | **Detección automática de GPU** - VAAPI (Intel) / QSV / NVENC优先级 |
+| **Transcodificación** | FFmpeg (libx264) | **Preset Fast** con escalado Lanczos y VBV optimizado |
 | **Formato de salida** | DASH (MP4 Fragments) | Segmentación dinámica con metadatos optimizados |
 | **Reproductor** | Shaka Player (Google) | ABR habilitado con `lowerBitrateSwitching: true` |
 | **Estilos** | CSS Moderno | Glassmorphism, animaciones suaves y modo oscuro nativo |
+
+---
+
+## 🛡️ Seguridad de Archivos
+
+- **Borrado Seguro**: El archivo original solo se borra después de verificar que `manifest.mpd` existe y tiene contenido válido (>0 bytes).
+- **Previene Pérdida de Datos**: Si la transcodificación falla, el video original se conserva para reintentar.
 
 ---
 

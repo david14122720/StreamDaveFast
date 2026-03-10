@@ -3,6 +3,7 @@ package processor
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -124,10 +125,20 @@ func (q *Queue) worker(id int) {
 			job.Result = result
 			fmt.Printf("✅ Worker %d completó: %s\n", id, job.VideoName)
 
-			// Una vez que el archivo está procesado, borramos el original
-			fmt.Printf("♻️ Borrando archivo original para ahorrar espacio: %s\n", job.InputPath)
-			if removeErr := os.Remove(job.InputPath); removeErr != nil {
-				fmt.Printf("⚠️ No se pudo borrar el archivo original: %v\n", removeErr)
+			// Verificar que el manifest.mpd existe y tiene contenido válido antes de borrar el original
+			manifestPath := filepath.Join(job.OutputDir, "manifest.mpd")
+			if _, err := os.Stat(manifestPath); err == nil {
+				info, err := os.Stat(manifestPath)
+				if err == nil && info.Size() > 0 {
+					fmt.Printf("♻️ Borrando archivo original para ahorrar espacio: %s\n", job.InputPath)
+					if removeErr := os.Remove(job.InputPath); removeErr != nil {
+						fmt.Printf("⚠️ No se pudo borrar el archivo original: %v\n", removeErr)
+					}
+				} else {
+					fmt.Printf("⚠️ No se borra el original: manifest.mpd vacío o corrupto\n")
+				}
+			} else {
+				fmt.Printf("⚠️ No se borra el original: manifest.mpd no existe\n")
 			}
 		}
 		q.mu.Unlock()

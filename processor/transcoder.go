@@ -23,13 +23,13 @@ func CheckFFmpeg() error {
 	return cmd.Run()
 }
 
-// Perfiles de calidad estándar (escalera de bitrate optimizada para "Cold Start")
+// Perfiles de calidad estándar (escalera de bitrate optimizada para evitar VBV underflow)
 var QualityProfiles = []QualityProfile{
-	{Name: "144p", Resolution: "256x144", VideoBitrate: "150k", Label: "Ultra Económico (GPRS/Edge)"},
-	{Name: "240p", Resolution: "426x240", VideoBitrate: "350k", Label: "Económico (3G)"},
-	{Name: "480p", Resolution: "854x480", VideoBitrate: "1200k", Label: "Estándar (WiFi)"},
-	{Name: "720p", Resolution: "1280x720", VideoBitrate: "2500k", Label: "HD (4G/Fibra)"},
-	{Name: "1080p", Resolution: "1920x1080", VideoBitrate: "4500k", Label: "Full HD (Pro)"}, // Optimizado con VBV estricto en el loop
+	{Name: "144p", Resolution: "256x144", VideoBitrate: "200k", Label: "Ultra Económico (GPRS/Edge)"},
+	{Name: "240p", Resolution: "426x240", VideoBitrate: "400k", Label: "Económico (3G)"},
+	{Name: "480p", Resolution: "854x480", VideoBitrate: "1500k", Label: "Estándar (WiFi)"},
+	{Name: "720p", Resolution: "1280x720", VideoBitrate: "3000k", Label: "HD (4G/Fibra)"},
+	{Name: "1080p", Resolution: "1920x1080", VideoBitrate: "5000k", Label: "Full HD (Pro)"}, // Aumentado para evitar underflow
 	{Name: "1440p", Resolution: "2560x1440", VideoBitrate: "8000k", Label: "2K (Ultra HD)"},
 	{Name: "2160p", Resolution: "3840x2160", VideoBitrate: "15000k", Label: "4K (Cine)"},
 }
@@ -81,15 +81,11 @@ func DetectHardware() HardwareDetector {
 
 // GetEncoderConfig devuelve la configuración del encoder basada en el hardware disponible
 func GetEncoderConfig(hw HardwareDetector) (videoEncoder, hwAccel string) {
-	if hw.VAAPI {
-		return "h264_vaapi", "-hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_output_format vaapi"
-	}
-	if hw.QSV {
-		return "h264_qsv", "-hwaccel qsv -hwaccel_output_format qsv"
-	}
-	if hw.NVENC {
-		return "h264_nvenc", "-hwaccel cuda -hwaccel_output_format cuda"
-	}
+	// Por ahora deshabilitamos la aceleración por hardware para evitar problemas de compatibilidad
+	// con múltiples streams DASH. El problema es que VAAPI + libx264 con filtros múltiples
+	// no funciona bien con DASH multi-stream.
+	// Nota: Para usar HW, se necesitaría codificación nativa con h264_vaapi (no libx264)
+	// o procesar streams uno por uno (no en paralelo como hace DASH)
 	return "libx264", ""
 }
 
@@ -161,13 +157,13 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 	videoEncoder, hwAccel := GetEncoderConfig(hw)
 
 	if hw.VAAPI {
-		fmt.Printf("🟢 Usando VAAPI (Intel Quick Sync Video) - Encoder: %s\n", videoEncoder)
+		fmt.Printf("🟡 VAAPI detectado pero deshabilitado para compatibilidad con DASH multi-stream\n")
 	} else if hw.QSV {
-		fmt.Printf("🟢 Usando QSV (Intel Quick Sync Video) - Encoder: %s\n", videoEncoder)
+		fmt.Printf("🟡 QSV detectado pero deshabilitado para compatibilidad con DASH multi-stream\n")
 	} else if hw.NVENC {
-		fmt.Printf("🟢 Usando NVENC (NVIDIA) - Encoder: %s\n", videoEncoder)
+		fmt.Printf("🟡 NVENC detectado pero deshabilitado para compatibilidad con DASH multi-stream\n")
 	} else {
-		fmt.Printf("🔴 Usando CPU (libx264) - Sin aceleración por hardware\n")
+		fmt.Printf("🔴 Usando CPU (libx264)\n")
 	}
 
 	// Limpiar directorio de salida si existe
@@ -214,59 +210,37 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 		var bitrateNum int
 		fmt.Sscanf(p.VideoBitrate, "%dk", &bitrateNum)
 
-		// VBV estricto y perfil de compatibilidad por defecto
-		maxRate := fmt.Sprintf("%dk", int(float64(bitrateNum)*1.20)) // 20% de margen
-		bufSize := fmt.Sprintf("%dk", bitrateNum*2)                  // Buffer de 2s
+		// VBV con más margen para evitar underflow en escenas de acción
+		maxRate := fmt.Sprintf("%dk", int(float64(bitrateNum)*1.5)) // 50% de margen (antes era 20%)
+		bufSize := fmt.Sprintf("%dk", bitrateNum*3)                 // Buffer de 3s (antes era 2s)
 		profile := "main"
 		level := "4.0"
 		crf := "20"
 
 		// Optimización específica para 1080p (mayor calidad)
 		if p.Name == "1080p" {
-			maxRate = "5000k"
-			bufSize = "10000k"
+			maxRate = "6000k"
+			bufSize = "12000k"
 			profile = "high"
 			level = "4.1"
-			crf = "18" // Mayor calidad para 1080p
+			crf = "18"
 		}
 
-		// Configurar encoder según hardware
-		encoder := videoEncoder
-		extraParams := ""
-
-		// Para VAAPI/QSV/NVENC, usamos parámetros diferentes
-		if hw.VAAPI || hw.QSV || hw.NVENC {
-			extraParams = fmt.Sprintf("keyint=120:min-keyint=120")
-			if hw.VAAPI {
-				// VAAPI usa perfil baseline para mejor compatibilidad
-				profile = "baseline"
-				level = "3.1"
-			}
-		} else {
-			// libx264 usa x264-params
-			extraParams = "nal-hrd=vbr:keyint=120:min-keyint=120"
-		}
+		// Usar filter:v para escala con force_divisible_by=2 para evitar error de codec
+		scaleFilter := fmt.Sprintf("scale=%s:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos", p.Resolution)
 
 		args = append(args,
 			"-map", "0:v:0",
-			fmt.Sprintf("-c:v:%d", i), encoder,
+			fmt.Sprintf("-c:v:%d", i), videoEncoder,
 			fmt.Sprintf("-b:v:%d", i), p.VideoBitrate,
 			fmt.Sprintf("-maxrate:v:%d", i), maxRate,
 			fmt.Sprintf("-bufsize:v:%d", i), bufSize,
-			fmt.Sprintf("-s:v:%d", i), p.Resolution,
-			fmt.Sprintf("-pix_fmt:v:%d", i), "yuv420p",
+			"-filter:v:"+fmt.Sprintf("%d", i), scaleFilter,
 			fmt.Sprintf("-profile:v:%d", i), profile,
 			fmt.Sprintf("-level:v:%d", i), level,
 			fmt.Sprintf("-crf:v:%d", i), crf,
+			fmt.Sprintf("-x264-params:v:%d", i), "nal-hrd=vbr:keyint=120:min-keyint=120",
 		)
-
-		if extraParams != "" {
-			if hw.VAAPI || hw.QSV || hw.NVENC {
-				args = append(args, fmt.Sprintf("-x264-params:v:%d", i), extraParams)
-			} else {
-				args = append(args, fmt.Sprintf("-x264-params:v:%d", i), extraParams)
-			}
-		}
 	}
 
 	// 2. Añadir flujo de AUDIO ÚNICO (Master Audio)
