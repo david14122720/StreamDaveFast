@@ -238,8 +238,8 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 		if hw.VAAPI || hw.QSV || hw.NVENC {
 			extraParams = fmt.Sprintf("keyint=120:min-keyint=120")
 			if hw.VAAPI {
-				// VAAPI usa perfil constrained baseline para mejor compatibilidad
-				profile = "constrainedBaseline"
+				// VAAPI usa perfil baseline para mejor compatibilidad
+				profile = "baseline"
 				level = "3.1"
 			}
 		} else {
