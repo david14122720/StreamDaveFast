@@ -1073,22 +1073,17 @@
             // Configuración profesional para streaming estable
             shakaPlayer.configure({
                 streaming: {
-                    bufferingGoal: 30,            // Buffer 30s adelante
-                    rebufferingGoal: 5,           // 5s para reanudar si se corta
-                    bufferBehind: 30,              // Mantener 30s atrás
+                    bufferingGoal: 20,            // Reducido a 20s para estabilidad en 1080p
+                    rebufferingGoal: 4,           // 4s para reanudar
+                    bufferBehind: 15,             // Limpia buffer antiguo para liberar RAM
                     retryParameters: {
                         maxAttempts: 3,
                         baseDelay: 1000,
                         backoffFactor: 2,
-                        fuzzFactor: 0.5,
                     },
-                    failureCallback: (error) => {
-                        console.warn('Streaming failure:', error);
-                    },
-                    smallGapLimit: 0.5,
+                    smallGapLimit: 0.3,
                     jumpLargeGaps: true,
-                    gapDetectionThreshold: 0.5,
-                    maxGapDiff: 0.5,
+                    gapDetectionThreshold: 0.3,
                 },
                 manifest: {
                     retryParameters: {
@@ -1099,7 +1094,7 @@
                     dash: {
                         ignoreMinBufferTime: true,
                         autoCorrectAudioTimestamp: true,
-                        useLowerBitrateSwitching: false,
+                        useLowerBitrateSwitching: true, // Crucial para no trabarse al inicio
                     },
                 },
                 abr: {
@@ -1391,9 +1386,9 @@
             }
         });
 
-        // ================ UI UPDATE LOOP ================
+        // ================ UI UPDATE LOOP (Reloj optimizado) ================
         setInterval(() => {
-            if (v.duration) {
+            if (v.duration && !v.paused) {
                 // Progress
                 progressFill.style.width = (v.currentTime / v.duration * 100) + '%';
                 currentTimeEl.textContent = fmt(v.currentTime);
@@ -1404,17 +1399,16 @@
                     try {
                         const buffered = v.buffered.end(v.buffered.length - 1);
                         progressBuffer.style.width = (buffered / v.duration * 100) + '%';
-
                         const bufferAhead = Math.max(0, buffered - v.currentTime);
                         statsBuffer.textContent = Math.round(bufferAhead) + 's';
                         nowPlayingBuffer.innerHTML = `<i class="fas fa-database"></i> Buffer: ${Math.round(bufferAhead)}s`;
                     } catch (e) { }
                 }
-
-                // RAM Stats (Fetch async)
-                updateRAMStats();
             }
         }, 250);
+
+        // Actualizar estadísticas de RAM menos frecuentemente (cada 2s)
+        setInterval(updateRAMStats, 2000);
 
         async function updateRAMStats() {
             try {

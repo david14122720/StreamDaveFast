@@ -23,7 +23,7 @@ var QualityProfiles = []QualityProfile{
 	{Name: "240p", Resolution: "426x240", VideoBitrate: "350k", Label: "Económico (3G)"},
 	{Name: "480p", Resolution: "854x480", VideoBitrate: "1200k", Label: "Estándar (WiFi)"},
 	{Name: "720p", Resolution: "1280x720", VideoBitrate: "2500k", Label: "HD (4G/Fibra)"},
-	{Name: "1080p", Resolution: "1920x1080", VideoBitrate: "4500k", Label: "Full HD (Pro)"},
+	{Name: "1080p", Resolution: "1920x1080", VideoBitrate: "4500k", Label: "Full HD (Pro)"}, // Optimizado con VBV estricto en el loop
 	{Name: "1440p", Resolution: "2560x1440", VideoBitrate: "8000k", Label: "2K (Ultra HD)"},
 	{Name: "2160p", Resolution: "3840x2160", VideoBitrate: "15000k", Label: "4K (Cine)"},
 }
@@ -134,8 +134,22 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 		// Parseamos el bitrate para cálculos de VBV (Buffer Verifier)
 		var bitrateNum int
 		fmt.Sscanf(p.VideoBitrate, "%dk", &bitrateNum)
-		maxRate := fmt.Sprintf("%dk", int(float64(bitrateNum)*1.15)) // 15% de margen para picos
-		bufSize := fmt.Sprintf("%dk", bitrateNum*2)                  // Buffer de 2s para estabilidad
+
+		// VBV estricto y perfil de compatibilidad por defecto
+		maxRate := fmt.Sprintf("%dk", int(float64(bitrateNum)*1.20)) // 20% de margen
+		bufSize := fmt.Sprintf("%dk", bitrateNum*2)                  // Buffer de 2s
+		profile := "main"
+		level := "4.0"
+		crf := "20"
+
+		// Optimización específica para 1080p (el más pesado)
+		if p.Name == "1080p" {
+			maxRate = "5000k"
+			bufSize = "10000k"
+			profile = "high"
+			level = "4.1"
+			crf = "22" // Ligera reducción de carga para CPU
+		}
 
 		args = append(args,
 			"-map", "0:v:0",
@@ -145,9 +159,10 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 			fmt.Sprintf("-bufsize:v:%d", i), bufSize,
 			fmt.Sprintf("-s:v:%d", i), p.Resolution,
 			fmt.Sprintf("-pix_fmt:v:%d", i), "yuv420p",
-			fmt.Sprintf("-profile:v:%d", i), "main",
-			fmt.Sprintf("-crf:v:%d", i), "20",
-			fmt.Sprintf("-x264-params:v:%d", i), "nal-hrd=vbr:force-cfr=1", // Estabiliza el flujo de frames
+			fmt.Sprintf("-profile:v:%d", i), profile,
+			fmt.Sprintf("-level:v:%d", i), level,
+			fmt.Sprintf("-crf:v:%d", i), crf,
+			fmt.Sprintf("-x264-params:v:%d", i), "nal-hrd=vbr:keyint=120:min-keyint=120",
 		)
 	}
 
@@ -166,11 +181,10 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 
 	// Opciones globales de encoding (para calidad pro y concurrencia)
 	args = append(args,
-		"-preset", "medium",
+		"-preset", "fast",
 		"-threads", "0",
-		"-r", "24",
-		"-force_key_frames", "expr:gte(t,n_forced*5)", // Keyframe exacto cada 5s (Cero parpadeo)
-		"-sc_threshold", "0",
+		"-force_key_frames", "expr:gte(t,n_forced*5)", // Keyframe basado en tiempo real
+		"-sc_threshold", "0", // Desactivar detección de cambio de escena
 		"-avoid_negative_ts", "make_zero",
 		"-map_metadata", "-1",
 		"-movflags", "+faststart",
@@ -187,7 +201,6 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 		"-init_seg_name", "init-$RepresentationID$.m4s",
 		"-media_seg_name", "chunk-$RepresentationID$-$Number%05d$.m4s",
 		"-adaptation_sets", "id=0,streams=v id=1,streams=a",
-		"-frag_type", "every_frame", // Para reducir latencia inicial
 		filepath.Join(outputDir, "manifest.mpd"),
 	)
 
@@ -219,8 +232,5 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 	return &TranscodeResult{
 		VideoName:    filepath.Base(inputPath),
 		ManifestPath: filepath.Join(outputDir, "manifest.mpd"),
-		Qualities:    qualityNames,
-		Duration:     elapsed.Seconds(),
-		ProcessedAt:  time.Now(),
 	}, nil
 }
