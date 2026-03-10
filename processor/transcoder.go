@@ -17,6 +17,12 @@ type QualityProfile struct {
 	Label        string
 }
 
+// CheckFFmpeg verifica que FFmpeg esté instalado y tenga los codecs necesarios
+func CheckFFmpeg() error {
+	cmd := exec.Command("ffmpeg", "-version")
+	return cmd.Run()
+}
+
 // Perfiles de calidad estándar (escalera de bitrate optimizada para "Cold Start")
 var QualityProfiles = []QualityProfile{
 	{Name: "144p", Resolution: "256x144", VideoBitrate: "150k", Label: "Ultra Económico (GPRS/Edge)"},
@@ -37,10 +43,54 @@ type TranscodeResult struct {
 	ProcessedAt  time.Time `json:"processed_at"`
 }
 
-// CheckFFmpeg verifica que FFmpeg esté instalado y tenga los codecs necesarios
-func CheckFFmpeg() error {
-	cmd := exec.Command("ffmpeg", "-version")
-	return cmd.Run()
+// HardwareDetector detecta qué aceleración por hardware está disponible
+type HardwareDetector struct {
+	VAAPI bool
+	QSV   bool
+	NVENC bool
+}
+
+// DetectHardware detecta la aceleración por hardware disponible
+func DetectHardware() HardwareDetector {
+	detector := HardwareDetector{}
+
+	// Verificar VAAPI
+	cmd := exec.Command("ffmpeg", "-hide_banner", "-encoders", "2>/dev/null")
+	output, _ := cmd.Output()
+	outputStr := string(output)
+
+	if strings.Contains(outputStr, "h264_vaapi") || strings.Contains(outputStr, "hevc_vaapi") {
+		vaCmd := exec.Command("vainfo")
+		if vaCmd.Run() == nil {
+			detector.VAAPI = true
+		}
+	}
+
+	// Verificar QSV
+	if strings.Contains(outputStr, "h264_qsv") {
+		detector.QSV = true
+	}
+
+	// Verificar NVENC
+	if strings.Contains(outputStr, "h264_nvenc") {
+		detector.NVENC = true
+	}
+
+	return detector
+}
+
+// GetEncoderConfig devuelve la configuración del encoder basada en el hardware disponible
+func GetEncoderConfig(hw HardwareDetector) (videoEncoder, hwAccel string) {
+	if hw.VAAPI {
+		return "h264_vaapi", "-hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_output_format vaapi"
+	}
+	if hw.QSV {
+		return "h264_qsv", "-hwaccel qsv -hwaccel_output_format qsv"
+	}
+	if hw.NVENC {
+		return "h264_nvenc", "-hwaccel cuda -hwaccel_output_format cuda"
+	}
+	return "libx264", ""
 }
 
 // GetVideoDuration obtiene la duración de un video en segundos
@@ -106,6 +156,28 @@ func SelectProfiles(width, height int) []QualityProfile {
 func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error) {
 	startTime := time.Now()
 
+	// Detectar hardware disponible
+	hw := DetectHardware()
+	videoEncoder, hwAccel := GetEncoderConfig(hw)
+
+	if hw.VAAPI {
+		fmt.Printf("🟢 Usando VAAPI (Intel Quick Sync Video) - Encoder: %s\n", videoEncoder)
+	} else if hw.QSV {
+		fmt.Printf("🟢 Usando QSV (Intel Quick Sync Video) - Encoder: %s\n", videoEncoder)
+	} else if hw.NVENC {
+		fmt.Printf("🟢 Usando NVENC (NVIDIA) - Encoder: %s\n", videoEncoder)
+	} else {
+		fmt.Printf("🔴 Usando CPU (libx264) - Sin aceleración por hardware\n")
+	}
+
+	// Limpiar directorio de salida si existe
+	if _, err := os.Stat(outputDir); err == nil {
+		fmt.Printf("🗑️ Limpiando directorio existente: %s\n", outputDir)
+		if err := os.RemoveAll(outputDir); err != nil {
+			return nil, fmt.Errorf("error limpiando directorio: %w", err)
+		}
+	}
+
 	// Crear directorio de salida
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, fmt.Errorf("error creando directorio de salida: %w", err)
@@ -124,10 +196,17 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 	fmt.Printf("🎯 Perfiles seleccionados: %d variantes\n", len(profiles))
 
 	// Construir argumentos de FFmpeg
-	args := []string{
+	args := []string{}
+
+	// Añadir aceleración por hardware si está disponible
+	if hwAccel != "" {
+		args = append(args, strings.Split(hwAccel, " ")...)
+	}
+
+	args = append(args,
 		"-i", inputPath,
 		"-y", // Sobrescribir sin preguntar
-	}
+	)
 
 	// 1. Añadir flujos de VIDEO (Múltiples calidades)
 	for i, p := range profiles {
@@ -142,18 +221,35 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 		level := "4.0"
 		crf := "20"
 
-		// Optimización específica para 1080p (el más pesado)
+		// Optimización específica para 1080p (mayor calidad)
 		if p.Name == "1080p" {
 			maxRate = "5000k"
 			bufSize = "10000k"
 			profile = "high"
 			level = "4.1"
-			crf = "22" // Ligera reducción de carga para CPU
+			crf = "18" // Mayor calidad para 1080p
+		}
+
+		// Configurar encoder según hardware
+		encoder := videoEncoder
+		extraParams := ""
+
+		// Para VAAPI/QSV/NVENC, usamos parámetros diferentes
+		if hw.VAAPI || hw.QSV || hw.NVENC {
+			extraParams = fmt.Sprintf("keyint=120:min-keyint=120")
+			if hw.VAAPI {
+				// VAAPI usa perfil constrained baseline para mejor compatibilidad
+				profile = "constrainedBaseline"
+				level = "3.1"
+			}
+		} else {
+			// libx264 usa x264-params
+			extraParams = "nal-hrd=vbr:keyint=120:min-keyint=120"
 		}
 
 		args = append(args,
 			"-map", "0:v:0",
-			fmt.Sprintf("-c:v:%d", i), "libx264",
+			fmt.Sprintf("-c:v:%d", i), encoder,
 			fmt.Sprintf("-b:v:%d", i), p.VideoBitrate,
 			fmt.Sprintf("-maxrate:v:%d", i), maxRate,
 			fmt.Sprintf("-bufsize:v:%d", i), bufSize,
@@ -162,8 +258,15 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 			fmt.Sprintf("-profile:v:%d", i), profile,
 			fmt.Sprintf("-level:v:%d", i), level,
 			fmt.Sprintf("-crf:v:%d", i), crf,
-			fmt.Sprintf("-x264-params:v:%d", i), "nal-hrd=vbr:keyint=120:min-keyint=120",
 		)
+
+		if extraParams != "" {
+			if hw.VAAPI || hw.QSV || hw.NVENC {
+				args = append(args, fmt.Sprintf("-x264-params:v:%d", i), extraParams)
+			} else {
+				args = append(args, fmt.Sprintf("-x264-params:v:%d", i), extraParams)
+			}
+		}
 	}
 
 	// 2. Añadir flujo de AUDIO ÚNICO (Master Audio)
