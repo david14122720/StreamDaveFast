@@ -24,3 +24,6 @@ Thumbs.db
 css/bootstrap.min.css
 js/jquery.min.js
 js/bootstrap.min.js
+
+# Tooling AI local (no parte del proyecto)
+.atl/
