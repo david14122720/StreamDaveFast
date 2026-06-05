@@ -735,6 +735,44 @@
         ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
         .video-wrapper:fullscreen { border-radius: 0; }
         .video-wrapper:fullscreen .player-controls { position: absolute; bottom: 0; left: 0; right: 0; z-index: 20; }
+
+        /* PR #2: hover preview tooltip on the seek bar. Shows a
+           thumbnail of the frame under the cursor. The tooltip is
+           positioned absolutely inside the .progress-track so the
+           mousemove handler can use x/y math from getBoundingClientRect
+           without having to climb to the .player-controls layer. The
+           background-image + background-position are set from JS as
+           Shaka emits new (x,y) values. */
+        .preview-tooltip {
+            position: absolute;
+            bottom: 18px;
+            left: 0;
+            width: 160px;
+            height: 90px;
+            background-color: #000;
+            background-repeat: no-repeat;
+            background-size: 1600px 900px; /* full sprite 10x10 */
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+            pointer-events: none;
+            opacity: 0;
+            transform: translateX(-50%);
+            transition: opacity 0.1s ease;
+            z-index: 30;
+        }
+        .preview-tooltip.visible {
+            opacity: 1;
+        }
+        /* PR #2 + spec: hide the tooltip on touch-only devices. Using
+           CSS @media (hover: none) instead of a JS navigator check
+           correctly handles hybrid laptops (touchscreen + mouse) — the
+           mouse user still sees the preview. (pointer: coarse) would
+           also be checked but it's a subset of (hover: none) in
+           practice; per spec the simpler single check is enough. */
+        @media (hover: none) {
+            .preview-tooltip { display: none; }
+        }
     </style>
 </head>
 
@@ -784,6 +822,10 @@
                         <div class="progress-track" id="progressBar">
                             <div class="progress-buffer" id="progressBuffer"></div>
                             <div class="progress-fill" id="progressFill"></div>
+                            <!-- PR #2: hover preview tooltip. Hidden on touch
+                                 devices via @media (hover: none) so iPad/iPhone
+                                 Safari users don't get a stuck tooltip -->
+                            <div class="preview-tooltip" id="previewTooltip"></div>
                         </div>
                         <span class="time-display" id="duration">0:00</span>
                     </div>
@@ -904,6 +946,12 @@
         let playbackSpeed = 1;
         const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
+        // PR #2: thumbnail track state. Populated by addThumbnailsTrack()
+        // after each successful load(); null when the current video has no
+        // sprite (so the hover handler short-circuits).
+        let thumbTrackId = null;
+        let thumbSpriteUrl = null;
+
         // DOM Elements
         const v = document.getElementById('video');
         const playBtn = document.getElementById('playBtn');
@@ -918,6 +966,7 @@
         const overlay = document.getElementById('overlay');
         const progressBar = document.getElementById('progressBar');
         const progressFill = document.getElementById('progressFill');
+        const previewTooltip = document.getElementById('previewTooltip');
         const progressBuffer = document.getElementById('progressBuffer');
         const currentTimeEl = document.getElementById('currentTime');
         const durationEl = document.getElementById('duration');
@@ -1103,6 +1152,15 @@
 
             try {
                 if (video.is_processed && video.manifest_url) {
+                    // PR #2: clear stale thumbnail state from the previous
+                    // selection. Without this the mousemove handler could
+                    // briefly query the old track while the new one is
+                    // being added (Shaka's addThumbnailsTrack is async
+                    // and resolves after a fetch).
+                    thumbTrackId = null;
+                    thumbSpriteUrl = null;
+                    previewTooltip.classList.remove('visible');
+
                     // iOS Safari (and other WebKit-only browsers) can't play DASH
                     // reliably; route them to the HLS variant produced by the second
                     // ffmpeg pass. The third-party iOS browsers (CriOS/FxiOS/EdgiOS)
@@ -1116,6 +1174,38 @@
                     // Cargar DASH con Shaka Player
                     const manifestUrl = encodeURI(rawManifestUrl);
                     await shakaPlayer.load(manifestUrl);
+
+                    // PR #2: WebVTT thumbnail sprite. Must be called AFTER
+                    // load() resolves — Shaka 4.3.5 throws CONTENT_NOT_LOADED
+                    // otherwise (verified against shaka-project/shaka-player
+                    // PR #4497). Both DASH and HLS manifests live next to a
+                    // sibling thumbnails.vtt, so we derive the URL with the
+                    // same string-replace trick used for the manifest swap.
+                    // Failures are non-fatal: a missing sprite just hides the
+                    // hover preview.
+                    try {
+                        const thumbVttUrl = encodeURI(
+                            rawManifestUrl.replace(/master\.m3u8$/, 'thumbnails.vtt')
+                                .replace(/manifest\.mpd$/, 'thumbnails.vtt')
+                        );
+                        const thumbTrack = await shakaPlayer.addThumbnailsTrack(
+                            thumbVttUrl, 'text/vtt'
+                        );
+                        if (thumbTrack && thumbTrack.id) {
+                            thumbTrackId = thumbTrack.id;
+                            // The sprite URL Shaka uses internally is the
+                            // one referenced by the VTT cues (we point at
+                            // thumbnails.jpg); the preview handler reads it
+                            // via shakaPlayer.getThumbnailSprite().
+                            thumbSpriteUrl = shakaPlayer.getThumbnailSprite
+                                ? shakaPlayer.getThumbnailSprite()
+                                : thumbVttUrl.replace(/thumbnails\.vtt$/, 'thumbnails.jpg');
+                        }
+                    } catch (thumbErr) {
+                        console.warn('Thumbnails not available:', thumbErr);
+                        // Non-fatal: continue playback without preview.
+                    }
+
                     qualityBadge.innerHTML = '<i class="fas fa-signal"></i> Auto';
                     const formatLabel = isIOS ? 'HLS (iOS)' : 'DASH Adaptativo';
                     showToast(`Reproduciendo: ${video.name} (${formatLabel})`, 'success');
@@ -1287,6 +1377,53 @@
             const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
             v.currentTime = ratio * (v.duration || 0);
         };
+
+        // PR #2: hover preview tooltip. When the user hovers the seek bar,
+        // we ask Shaka for the thumbnail matching the time at the cursor
+        // position. Shaka returns {positionX, positionY, width, height} —
+        // we set the tooltip's background-position to shift the sprite
+        // so that one tile is visible. The CSS @media (hover: none) rule
+        // hides the element entirely on touch-only devices.
+        progressBar.addEventListener('mousemove', async (e) => {
+            // Short-circuit when no thumbnail track is loaded or when the
+            // video has no duration yet (avoids NaN division).
+            if (!thumbTrackId || !v.duration) {
+                previewTooltip.classList.remove('visible');
+                return;
+            }
+            const rect = progressBar.getBoundingClientRect();
+            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            const targetTime = ratio * v.duration;
+
+            try {
+                const thumb = await shakaPlayer.getThumbnails(thumbTrackId, targetTime);
+                if (!thumb) {
+                    // No thumbnail covers this time (e.g. past last sample).
+                    previewTooltip.classList.remove('visible');
+                    return;
+                }
+                // Set the sprite URL once. The browser dedupes identical
+                // URLs so re-setting the same value is essentially free.
+                if (thumbSpriteUrl) {
+                    previewTooltip.style.backgroundImage = `url(${thumbSpriteUrl})`;
+                }
+                // background-position is negated: the sprite is 1600x900
+                // and the tile is 160x90. Setting `left: -x; top: -y`
+                // reveals the correct tile in the visible 160x90 window.
+                previewTooltip.style.backgroundPosition =
+                    `-${thumb.positionX}px -${thumb.positionY}px`;
+                // Center the tooltip on the cursor.
+                previewTooltip.style.left = `${e.clientX - rect.left}px`;
+                previewTooltip.classList.add('visible');
+            } catch (err) {
+                // Don't spam the console if Shaka temporarily fails
+                // (e.g. mid-seek); just hide the tooltip.
+                previewTooltip.classList.remove('visible');
+            }
+        });
+        progressBar.addEventListener('mouseleave', () => {
+            previewTooltip.classList.remove('visible');
+        });
 
         // Video ended
         v.addEventListener('ended', () => {
