@@ -62,6 +62,7 @@ type TranscodeResult struct {
 	ProcessedAt  time.Time `json:"processed_at"`
 	Codec        string    `json:"codec"`
 	Encoder      string    `json:"encoder"`
+	HLSManifest  string    `json:"hls_manifest,omitempty"`
 }
 
 // HardwareDetector detecta qué aceleración por hardware está disponible
@@ -437,6 +438,29 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 		return nil, fmt.Errorf("error en transcodificación: %w", err)
 	}
 
+	// Pass 2: HLS muxer (remux only, no re-encode).
+	// Reads the DASH encoded ladder from disk and rewraps it as HLS
+	// (.m3u8 + .ts segments) so iOS Safari can play the same encoded
+	// content via Shaka's HLS engine. See decision A2.
+	hlsManifestPath := filepath.Join(outputDir, "master.m3u8")
+	hlsArgs := []string{
+		"-y",
+		"-i", filepath.Join(outputDir, "manifest.mpd"),
+		"-c", "copy",
+		"-f", "hls",
+		"-hls_time", "6",
+		"-hls_segment_filename", filepath.Join(outputDir, "seg-%03d.ts"),
+		"-master_pl_name", "master.m3u8",
+		hlsManifestPath,
+	}
+	hlsCmd := exec.Command("ffmpeg", hlsArgs...)
+	hlsCmd.Stderr = os.Stderr
+	hlsCmd.Stdout = os.Stdout
+	fmt.Printf("📺 Generando HLS (remux desde DASH encoded ladder)...\n")
+	if err := hlsCmd.Run(); err != nil {
+		return nil, fmt.Errorf("error en pass HLS: %w", err)
+	}
+
 	elapsed := time.Since(startTime)
 	fmt.Printf("✅ Transcodificación completada en %s\n", elapsed.Round(time.Second))
 
@@ -458,5 +482,6 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 		ProcessedAt:  time.Now(),
 		Codec:        string(encoderConfig.Codec),
 		Encoder:      encoderConfig.Encoder,
+		HLSManifest:  hlsManifestPath,
 	}, nil
 }
