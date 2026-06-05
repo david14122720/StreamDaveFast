@@ -55,14 +55,89 @@ var QualityProfiles = []QualityProfile{
 
 // TranscodeResult contiene información sobre la transcodificación completada
 type TranscodeResult struct {
-	VideoName    string    `json:"video_name"`
-	ManifestPath string    `json:"manifest_path"`
-	Qualities    []string  `json:"qualities"`
-	Duration     float64   `json:"duration_seconds"`
-	ProcessedAt  time.Time `json:"processed_at"`
-	Codec        string    `json:"codec"`
-	Encoder      string    `json:"encoder"`
-	HLSManifest  string    `json:"hls_manifest,omitempty"`
+	VideoName       string    `json:"video_name"`
+	ManifestPath    string    `json:"manifest_path"`
+	Qualities       []string  `json:"qualities"`
+	Duration        float64   `json:"duration_seconds"`
+	ProcessedAt     time.Time `json:"processed_at"`
+	Codec           string    `json:"codec"`
+	Encoder         string    `json:"encoder"`
+	HLSManifest     string    `json:"hls_manifest,omitempty"`
+	ThumbnailSprite string    `json:"thumbnail_sprite,omitempty"`
+	ThumbnailVTT    string    `json:"thumbnail_vtt,omitempty"`
+}
+
+// Thumbnail grid geometry for the sprite + VTT. One 10x10 tile grid of 160x90
+// thumbnails covers 100 samples × 5s = 500s (~8m 20s) per sprite. Longer
+// videos would need multiple sprites; for PR #2 we keep the single-sprite
+// per-video simplification (see design §thumbnail-previews + task 2.1 notes).
+const (
+	thumbTileW     = 160
+	thumbTileH     = 90
+	thumbCols      = 10
+	thumbRows      = 10
+	thumbSampleSec = 5
+)
+
+// formatVTTTimestamp renders seconds as a WebVTT timestamp (HH:MM:SS.mmm).
+// Negative or zero values collapse to 00:00:00.000.
+func formatVTTTimestamp(seconds float64) string {
+	if seconds < 0 {
+		seconds = 0
+	}
+	h := int(seconds / 3600)
+	m := int(seconds/60) - h*60
+	s := seconds - float64(h*3600+m*60)
+	return fmt.Sprintf("%02d:%02d:%06.3f", h, m, s)
+}
+
+// GenerateThumbnailsVTT builds the WebVTT sprite pointer file for one video.
+// It emits one cue per 5s sample across [0, duration], with #xywh matching
+// the 10x10 grid layout produced by the thumbnail FFmpeg pass. Pure Go, no
+// FFmpeg involvement — callers write the result to disk in one syscall.
+//
+// Note: when duration is shorter than a single sample (duration < 5s) we
+// still emit exactly one cue covering 0..duration so the player always has
+// at least one tile to draw.
+func GenerateThumbnailsVTT(duration float64) string {
+	var b strings.Builder
+	b.WriteString("WEBVTT\n\n")
+
+	if duration <= 0 {
+		// Edge case: zero-length source. Emit a single cue that just
+		// points at tile (0,0); downstream code will never seek into it
+		// because v.duration is also 0.
+		b.WriteString(fmt.Sprintf("00:00:00.000 --> 00:00:00.000\n"))
+		b.WriteString(fmt.Sprintf("thumbnails.jpg#xywh=0,0,%d,%d\n", thumbTileW, thumbTileH))
+		return b.String()
+	}
+
+	// Number of 5s samples that fit in the video. We always emit at least
+	// one cue so the player has a tile for t=0.
+	samples := int(duration / float64(thumbSampleSec))
+	if samples < 1 {
+		samples = 1
+	}
+	for i := 0; i < samples; i++ {
+		startSec := float64(i) * float64(thumbSampleSec)
+		endSec := startSec + float64(thumbSampleSec)
+		if endSec > duration {
+			endSec = duration
+		}
+		col := i % thumbCols
+		row := i / thumbCols
+		x := col * thumbTileW
+		y := row * thumbTileH
+
+		b.WriteString(fmt.Sprintf("%s --> %s\n",
+			formatVTTTimestamp(startSec),
+			formatVTTTimestamp(endSec),
+		))
+		b.WriteString(fmt.Sprintf("thumbnails.jpg#xywh=%d,%d,%d,%d\n",
+			x, y, thumbTileW, thumbTileH,
+		))
+	}
+	return b.String()
 }
 
 // HardwareDetector detecta qué aceleración por hardware está disponible
@@ -464,6 +539,46 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 	elapsed := time.Since(startTime)
 	fmt.Printf("✅ Transcodificación completada en %s\n", elapsed.Round(time.Second))
 
+	// Pass 3: thumbnail sprite (160x90 tiles in a 10x10 grid, 1 frame per 5s).
+	// Reads the ORIGINAL input path (not the DASH .m4s segments): those are
+	// non-seekable media fragments without their init.mp4, and the source
+	// is local so the I/O cost is negligible. The `thumbnail` filter is
+	// keyframe-based which matches the testsrc/live-cam case perfectly; for
+	// already-encoded content it re-reads from the source's keyframes,
+	// which is exactly what we want. -update 1 makes the image2 muxer
+	// overwrite the single file (default would be thumbnails.jpg, thumb0001.jpg, ...).
+	// Pass-3 is sequential and runs after the HLS pass for now (simpler
+	// rollout); the design's full async decoupled pipeline is out of scope
+	// for PR #2 (see task 2.1 notes — "do not block segment serving on
+	// thumbnail completion" is deferred to a follow-up).
+	thumbSpritePath := filepath.Join(outputDir, "thumbnails.jpg")
+	thumbArgs := []string{
+		"-y",
+		"-i", inputPath,
+		"-vf", "thumbnail,scale=160:90,fps=1/5,tile=10x10",
+		"-frames:v", "1",
+		"-update", "1",
+		thumbSpritePath,
+	}
+	thumbCmd := exec.Command("ffmpeg", thumbArgs...)
+	thumbCmd.Stderr = os.Stderr
+	thumbCmd.Stdout = os.Stdout
+	fmt.Printf("🖼️  Generando sprite de miniaturas (10x10 tiles @ 1f/5s)...\n")
+	if err := thumbCmd.Run(); err != nil {
+		return nil, fmt.Errorf("error en pass thumbnails: %w", err)
+	}
+
+	// Pass 3b: WebVTT pointer file. Pure Go: emit a string and write it in
+	// one syscall. We derive duration from the source so the last cue is
+	// clamped to actual content length (avoids a 5s overlap past EOF).
+	thumbVTTPath := filepath.Join(outputDir, "thumbnails.vtt")
+	thumbDuration, _ := GetVideoDuration(inputPath)
+	thumbDurationF, _ := strconv.ParseFloat(thumbDuration, 64)
+	vttBody := GenerateThumbnailsVTT(thumbDurationF)
+	if err := os.WriteFile(thumbVTTPath, []byte(vttBody), 0o644); err != nil {
+		return nil, fmt.Errorf("error escribiendo thumbnails.vtt: %w", err)
+	}
+
 	// Obtener nombres de calidades
 	qualityNames := make([]string, len(profiles))
 	for i, p := range profiles {
@@ -475,13 +590,15 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 	}
 
 	return &TranscodeResult{
-		VideoName:    filepath.Base(inputPath),
-		ManifestPath: filepath.Join(outputDir, "manifest.mpd"),
-		Qualities:    qualityNames,
-		Duration:     duration,
-		ProcessedAt:  time.Now(),
-		Codec:        string(encoderConfig.Codec),
-		Encoder:      encoderConfig.Encoder,
-		HLSManifest:  hlsManifestPath,
+		VideoName:       filepath.Base(inputPath),
+		ManifestPath:    filepath.Join(outputDir, "manifest.mpd"),
+		Qualities:       qualityNames,
+		Duration:        duration,
+		ProcessedAt:     time.Now(),
+		Codec:           string(encoderConfig.Codec),
+		Encoder:         encoderConfig.Encoder,
+		HLSManifest:     hlsManifestPath,
+		ThumbnailSprite: thumbSpritePath,
+		ThumbnailVTT:    thumbVTTPath,
 	}, nil
 }
