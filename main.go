@@ -21,10 +21,21 @@ import (
 type CachedSegment struct {
 	Data       []byte
 	LastAccess time.Time
+	Size       int
 }
+
+const (
+	// cacheMaxEntryBytes: per-entry cap. A single 4K .ts can reach ~8MB; anything
+	// bigger than this is served from disk to avoid starving the cache.
+	cacheMaxEntryBytes = 10 * 1024 * 1024
+	// cacheMaxTotalBytes: aggregate cap. When exceeded, the entry with the oldest
+	// LastAccess is evicted (true LRU, not TTL-only).
+	cacheMaxTotalBytes = 256 * 1024 * 1024
+)
 
 var (
 	segmentCache = make(map[string]*CachedSegment)
+	cacheBytes   int64
 	cacheMutex   sync.Mutex
 	// BufferPool reduce la presión sobre el GC reutilizando slices de memoria
 	bufferPool = sync.Pool{
@@ -33,6 +44,86 @@ var (
 		},
 	}
 )
+
+// cacheGet returns a cached segment and bumps its LastAccess.
+// Returns (nil, false) on miss.
+func cacheGet(key string) (*CachedSegment, bool) {
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+	seg, ok := segmentCache[key]
+	if !ok {
+		return nil, false
+	}
+	seg.LastAccess = time.Now()
+	return seg, true
+}
+
+// cachePut stores data in the segment cache, enforcing the per-entry
+// and total-size caps. Entries larger than the per-entry cap are
+// dropped (caller falls through to disk). If the total cap is
+// exceeded, the least-recently-accessed entry is evicted until the
+// new entry fits.
+func cachePut(key string, data []byte) {
+	size := len(data)
+	if size > cacheMaxEntryBytes {
+		// Per-entry cap: refuse to cache oversized payloads.
+		return
+	}
+
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+
+	// If the key is already cached, free the old bytes before re-inserting.
+	if existing, ok := segmentCache[key]; ok {
+		cacheBytes -= int64(existing.Size)
+		delete(segmentCache, key)
+	}
+
+	// Evict LRU entries until the new entry fits.
+	for cacheBytes+int64(size) > cacheMaxTotalBytes && len(segmentCache) > 0 {
+		var oldestKey string
+		var oldestTime time.Time
+		first := true
+		for k, seg := range segmentCache {
+			if first || seg.LastAccess.Before(oldestTime) {
+				oldestKey = k
+				oldestTime = seg.LastAccess
+				first = false
+			}
+		}
+		if oldestKey == "" {
+			break
+		}
+		evicted := segmentCache[oldestKey]
+		cacheBytes -= int64(evicted.Size)
+		delete(segmentCache, oldestKey)
+		fmt.Printf("🧹 LRU evict: %s (%d bytes, last access %v)\n", oldestKey, evicted.Size, oldestTime.Round(time.Second))
+	}
+
+	segmentCache[key] = &CachedSegment{
+		Data:       data,
+		LastAccess: time.Now(),
+		Size:       size,
+	}
+	cacheBytes += int64(size)
+}
+
+// cacheDelete removes a key from the cache and updates the size counter.
+func cacheDelete(key string) {
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+	if seg, ok := segmentCache[key]; ok {
+		cacheBytes -= int64(seg.Size)
+		delete(segmentCache, key)
+	}
+}
+
+// cacheBytesNow returns the current aggregate cache size in bytes.
+func cacheBytesNow() int64 {
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+	return cacheBytes
+}
 
 var queue *processor.Queue
 
@@ -70,6 +161,7 @@ func main() {
 			count := 0
 			for path, seg := range segmentCache {
 				if time.Since(seg.LastAccess) > 30*time.Second {
+					cacheBytes -= int64(seg.Size)
 					delete(segmentCache, path)
 					count++
 				}
@@ -173,36 +265,27 @@ func handleDASHFiles(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
-	// 1. Intentar servir desde RAM (Máxima velocidad, 0 ms latencia disco)
-	if ext == ".m4s" {
-		cacheMutex.Lock()
-		if seg, exists := segmentCache[filePath]; exists {
-			seg.LastAccess = time.Now()
-			cacheMutex.Unlock()
-
+	// 1. Intentar servir desde RAM (Máxima velocidad, 0 ms latencia disco).
+	// Aplica a DASH (.m4s) y HLS (.ts) — los manifests nunca se cachean
+	// (son pequeños y deben leerse frescos para invalidación).
+	if ext == ".m4s" || ext == ".ts" {
+		if seg, ok := cacheGet(filePath); ok {
 			w.Header().Set("X-Cache", "HIT-RAM")
-			w.Header().Set("Content-Type", "video/iso.segment")
+			w.Header().Set("Content-Type", contentTypeFor(ext))
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			w.Write(seg.Data)
 			return
 		}
-		cacheMutex.Unlock()
 
 		// 2. Si no está en RAM, leerlo UNA SOLA VEZ y servirlo mientras se cachea
 		data, err := os.ReadFile(filePath)
 		if err == nil {
 			fmt.Printf("📥 RAM Cache: Cargando %s\n", filePath)
-			// Guardar en cache para la próxima petición
-			cacheMutex.Lock()
-			segmentCache[filePath] = &CachedSegment{
-				Data:       data,
-				LastAccess: time.Now(),
-			}
-			cacheMutex.Unlock()
+			cachePut(filePath, data)
 
 			// Servir el dato que ya tenemos en memoria (evitamos el doble read de ServeFile)
 			w.Header().Set("X-Cache", "MISS-RAM-DOWNLOADED")
-			w.Header().Set("Content-Type", "video/iso.segment")
+			w.Header().Set("Content-Type", contentTypeFor(ext))
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			w.Write(data)
 			return
@@ -211,16 +294,33 @@ func handleDASHFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Fallback para manifiestos (.mpd) u otros archivos
+	// 3. Fallback para manifiestos (.mpd, .m3u8) u otros archivos
 	if ext == ".mpd" {
 		w.Header().Set("Content-Type", "application/dash+xml")
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	} else if ext == ".m3u8" {
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	} else if ext == ".m4s" {
 		w.Header().Set("Content-Type", "video/iso.segment")
+	} else if ext == ".ts" {
+		w.Header().Set("Content-Type", "video/mp2t")
 	}
 
 	// Usar http.ServeFile para activar 'sendfile' en el fallback
 	http.ServeFile(w, r, filePath)
+}
+
+// contentTypeFor returns the MIME type for the cacheable segment extensions
+// served from /processed/. Centralized so the cache hit and miss paths agree.
+func contentTypeFor(ext string) string {
+	switch ext {
+	case ".m4s":
+		return "video/iso.segment"
+	case ".ts":
+		return "video/mp2t"
+	}
+	return "application/octet-stream"
 }
 
 // handleVideoFiles sirve videos con soporte de Range requests para seeking
@@ -606,7 +706,9 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"cache_count": count,
-		"status":      "online",
+		"cache_count":  count,
+		"cache_bytes":  cacheBytesNow(),
+		"cache_cap":    cacheMaxTotalBytes,
+		"status":       "online",
 	})
 }
