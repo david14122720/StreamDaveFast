@@ -773,6 +773,42 @@
         @media (hover: none) {
             .preview-tooltip { display: none; }
         }
+
+        /* PR #3: mobile-UX finishing. Three small but high-impact rules:
+           (1) env(safe-area-inset-*) keeps the control bar clear of the
+           iPhone notch / home indicator in landscape fullscreen and on
+           notched phones in portrait; (2) body.fullscreen-active kills
+           the body scroll while fullscreen (iOS Safari keeps the page
+           scrollable otherwise and reveals the URL bar); (3)
+           touch-action: manipulation on .ctrl-btn and the seek bar
+           disables the 300ms double-tap-to-zoom delay so taps feel
+           instant on touch devices. */
+        .player-controls {
+            padding-left: max(12px, env(safe-area-inset-left));
+            padding-right: max(12px, env(safe-area-inset-right));
+            padding-bottom: max(12px, env(safe-area-inset-bottom));
+        }
+        @media (min-width: 768px) {
+            .player-controls {
+                padding-left: max(20px, env(safe-area-inset-left));
+                padding-right: max(20px, env(safe-area-inset-right));
+                padding-bottom: max(20px, env(safe-area-inset-bottom));
+            }
+        }
+        .video-wrapper:fullscreen .player-controls {
+            padding-left: max(20px, env(safe-area-inset-left));
+            padding-right: max(20px, env(safe-area-inset-right));
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+        }
+        body.fullscreen-active {
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
+        }
+        .ctrl-btn,
+        .progress-track {
+            touch-action: manipulation;
+        }
     </style>
 </head>
 
