@@ -761,7 +761,7 @@
         <!-- PLAYER -->
         <div class="player-section">
             <div class="video-wrapper" id="videoWrapper">
-                <video id="video" preload="metadata" playsinline></video>
+                <video id="video" preload="metadata" playsinline webkit-playsinline></video>
 
                 <div class="quality-badge" id="qualityBadge">
                     <i class="fas fa-signal"></i> Auto
@@ -1103,11 +1103,22 @@
 
             try {
                 if (video.is_processed && video.manifest_url) {
+                    // iOS Safari (and other WebKit-only browsers) can't play DASH
+                    // reliably; route them to the HLS variant produced by the second
+                    // ffmpeg pass. The third-party iOS browsers (CriOS/FxiOS/EdgiOS)
+                    // ship their own engines and DO support DASH, so we exclude them.
+                    // navigator.platform is deprecated — use userAgent only.
+                    const isIOS = /iP(hone|ad|od)|Safari/.test(navigator.userAgent)
+                        && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
+                    const rawManifestUrl = isIOS
+                        ? video.manifest_url.replace(/manifest\.mpd$/, 'master.m3u8')
+                        : video.manifest_url;
                     // Cargar DASH con Shaka Player
-                    const manifestUrl = encodeURI(video.manifest_url);
+                    const manifestUrl = encodeURI(rawManifestUrl);
                     await shakaPlayer.load(manifestUrl);
                     qualityBadge.innerHTML = '<i class="fas fa-signal"></i> Auto';
-                    showToast(`Reproduciendo: ${video.name} (DASH Adaptativo)`, 'success');
+                    const formatLabel = isIOS ? 'HLS (iOS)' : 'DASH Adaptativo';
+                    showToast(`Reproduciendo: ${video.name} (${formatLabel})`, 'success');
                 } else {
                     // Cargar video directo (encode URI para nombres con espacios)
                     await shakaPlayer.unload();
@@ -1184,9 +1195,16 @@
         }
 
         function fullscreen() {
-            if (document.fullscreenElement) {
-                document.exitFullscreen();
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                (document.exitFullscreen
+                    ? document.exitFullscreen()
+                    : document.webkitExitFullscreen());
                 setIcon(fullscreenBtn, 'expand');
+            } else if (typeof v.webkitEnterFullscreen === 'function') {
+                // iOS Safari: requestFullscreen() no-ops on a <video playsinline>
+                // element, so we must use the WebKit-prefixed native API.
+                v.webkitEnterFullscreen();
+                setIcon(fullscreenBtn, 'compress');
             } else {
                 videoWrapper.requestFullscreen();
                 setIcon(fullscreenBtn, 'compress');
