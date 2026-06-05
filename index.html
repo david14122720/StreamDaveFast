@@ -1335,7 +1335,32 @@
                 videoWrapper.requestFullscreen();
                 setIcon(fullscreenBtn, 'compress');
             }
+            // PR #3: keep body.fullscreen-active in sync so the CSS
+            // scroll-lock + safe-area rules apply while in fullscreen.
+            // The webkitendfullscreen listener below covers the case
+            // where the user exits via the iOS native "Done" button
+            // (which does NOT fire fullscreenchange).
+            document.body.classList.toggle('fullscreen-active',
+                !!(document.fullscreenElement || document.webkitFullscreenElement));
         }
+
+        // PR #3: iOS Safari fires webkitendfullscreen (not fullscreenchange)
+        // when the user exits via the native "Done" button. Keep the body
+        // class and fullscreen icon in sync.
+        v.addEventListener('webkitendfullscreen', () => {
+            document.body.classList.remove('fullscreen-active');
+            setIcon(fullscreenBtn, 'expand');
+        });
+        document.addEventListener('fullscreenchange', () => {
+            const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            document.body.classList.toggle('fullscreen-active', active);
+            setIcon(fullscreenBtn, active ? 'compress' : 'expand');
+        });
+        document.addEventListener('webkitfullscreenchange', () => {
+            const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            document.body.classList.toggle('fullscreen-active', active);
+            setIcon(fullscreenBtn, active ? 'compress' : 'expand');
+        });
 
         let controlsTimeout;
         function showControls() {
@@ -1382,6 +1407,17 @@
 
         // ================ EVENT LISTENERS ================
         playBtn.onclick = toggle;
+        // PR #3: on portrait mobile, a single tap on the play button enters
+        // fullscreen within 300ms. The 300ms delay matches the desktop
+        // double-click timer (~line 1367) so a quick double-tap on the
+        // videoWrapper still works on desktop. iOS Safari requires the
+        // requestFullscreen() call to happen inside a user-gesture handler,
+        // which a click event is.
+        playBtn.addEventListener('click', () => {
+            if (window.matchMedia('(orientation: portrait)').matches) {
+                setTimeout(fullscreen, 300);
+            }
+        });
         // overlay ya no es necesario o se integra con el wrapper
         backBtn.onclick = () => v.currentTime = Math.max(0, v.currentTime - 10);
         forwardBtn.onclick = () => v.currentTime = Math.min(v.duration || 0, v.currentTime + 10);
