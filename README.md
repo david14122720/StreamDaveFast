@@ -16,17 +16,20 @@ StreamDaveFast es el primer paso hacia una plataforma de streaming profesional. 
    subido       │   GOP 5s | Keyframes Fixes  │     VBV Estricto (Anti-picos)
                 │   Pass 1: DASH (encode)     │
                 │   Pass 2: HLS  (remux -c copy)  → master.m3u8 + seg-*.ts
+                │   Pass 3: thumbnail filter  │  → thumbnails.jpg + .vtt
                 └──────────┬──────────────────┘
                            ↓
                 ┌─────────────────────────────┐  →  Cache LRU en RAM (256MB/10MB)
                 │  Segmentos DASH (.m4s)      │     DASH + HLS comparten pool
                 │  Segmentos HLS  (.ts)       │     Headers X-Cache: HIT
                 │  Manifiestos .mpd / .m3u8   │
+                │  Sprite + VTT (thumbnails)  │     No cacheados (browser los guarda)
                 └──────────┬──────────────────┘
                            ↓
                 ┌─────────────────────────────┐  →  Buffer Meta: 20s
                 │       Shaka Player          │     Ajuste Auto de Audio
                 │  iOS Safari → HLS (.m3u8)   │     UI Throttling (250ms)
+                │  addThumbnailsTrack(.vtt)   │     Preview en hover del seek bar
                 │  Resto del mundo → DASH     │
                 └─────────────────────────────┘
 ```
@@ -183,6 +186,83 @@ Todos los endpoints de la API devuelven errores en formato JSON:
 
 El segmento de video (GET `/processed/...`) usa los códigos HTTP estándar del `http.ServeFile` (200 / 206 / 404 / 416); el cuerpo en 4xx/5xx no es JSON.
 
+### Vista previa en el seek bar (Thumbnails)
+
+Cada video procesado emite dos archivos extra — un sprite JPEG y un WebVTT — que Shaka Player consume para mostrar un tooltip con la imagen del frame bajo el cursor mientras se hace hover sobre la barra de progreso.
+
+| Archivo | MIME | Ruta |
+|---------|------|------|
+| Sprite | `image/jpeg` | `/processed/{video}/thumbnails.jpg` |
+| WebVTT | `text/vtt` | `/processed/{video}/thumbnails.vtt` |
+
+#### Pipeline FFmpeg (pass 3)
+
+El pass 3 corre **después** de los passes DASH y HLS, leyendo el archivo original (no los `.m4s` ya segmentados — son fragments no-seekables sin su `init.mp4`):
+
+```bash
+ffmpeg -i Videos/foo.mp4 \
+  -vf "thumbnail,scale=160:90,fps=1/5,tile=10x10" \
+  -frames:v 1 -update 1 \
+  processed/foo/thumbnails.jpg
+```
+
+- `thumbnail`: filter keyframe-only que elige el frame más representativo de cada ventana. Re-leyendo del `inputPath` original toca los keyframes reales del video, así que es exactamente lo que queremos.
+- `scale=160:90`: cada tile es 160×90.
+- `fps=1/5`: 1 frame por cada 5s de video.
+- `tile=10x10`: grid final. 10 columnas × 10 filas = 100 tiles = 100 × 5s = **500s ≈ 8m 20s** de cobertura por sprite.
+- `-frames:v 1 -update 1`: el muxer `image2` normalmente produce `thumbnails.jpg`, `thumb0001.jpg`, ...; con `-update 1` sobre-escribe el mismo archivo.
+
+> **Limitación conocida**: videos de más de 8 minutos comparten el mismo sprite y los cues VTT exceden la grilla (la implementación actual emite cues más allá del tile 100). PR #2 ship la simplificación "un sprite por video" del spec; el caso multi-sprite está fuera de scope y queda para un follow-up. En la práctica la imagen se sigue viendo — sólo se "freezea" el último frame para los cues que caen fuera de la grilla.
+
+El `.vtt` lo genera Go (no FFmpeg) en `processor.GenerateThumbnailsVTT(duration)` — string puro, un solo `os.WriteFile`:
+
+```vtt
+WEBVTT
+
+00:00:00.000 --> 00:00:05.000
+thumbnails.jpg#xywh=0,0,160,90
+
+00:00:05.000 --> 00:00:10.000
+thumbnails.jpg#xywh=160,0,160,90
+
+00:00:10.000 --> 00:00:15.000
+thumbnails.jpg#xywh=320,0,160,90
+...
+```
+
+#### Wire shape con Shaka 4.3.5
+
+Shaka 4.3.5 introdujo `addThumbnailsTrack()` (PR #4497) y la query `getThumbnails(trackId, time)` (PR #4584). La API funciona **después** de que `load()` resuelve — llamarla antes tira `CONTENT_NOT_LOADED`. En `index.html` la llamada se hace en la misma cadena `await` que el `load()`:
+
+```js
+await shakaPlayer.load(manifestUrl);
+
+// Inmediatamente después, en el mismo await chain.
+const thumbTrack = await shakaPlayer.addThumbnailsTrack(
+  video.manifest_url.replace(/manifest\.mpd$/, 'thumbnails.vtt')
+                     .replace(/master\.m3u8$/, 'thumbnails.vtt'),
+  'text/vtt'
+);
+// thumbTrack.id se guarda para llamar shakaPlayer.getThumbnails(id, time)
+// desde el handler de mousemove del seek bar.
+```
+
+> **No usar** `player.configure({ thumbnails: { sprite, url } })` — esa key se agregó en Shaka 4.7+, **no existe en 4.3.5**. La detección "sprite + WebVTT con `#xywh`" es el estándar desde PR #4584.
+
+El handler de `mousemove` sobre `.progress-track` llama `shakaPlayer.getThumbnails(thumbTrackId, targetTime)` y actualiza `background-position` del `.preview-tooltip` con los `positionX`/`positionY` que devuelve Shaka.
+
+#### Supresión en dispositivos táctiles
+
+El tooltip se oculta con CSS puro en cualquier dispositivo sin hover real:
+
+```css
+@media (hover: none) {
+  .preview-tooltip { display: none; }
+}
+```
+
+Esto cubre iPad/iPhone Safari (que no son "hover") y touchscreen-laptops en modo touch. Si el usuario conecta un mouse, la media query sigue diciendo `hover: none` y el tooltip no aparece — lo cual es el comportamiento correcto: en hybrid devices sólo los usuarios que explícitamente mueven el cursor deben ver el preview.
+
 ---
 
 ## ⌨️ Atajos de Teclado
@@ -206,7 +286,7 @@ El segmento de video (GET `/processed/...`) usa los códigos HTTP estándar del 
 - [x] Soporte para nombres de archivos con caracteres especiales
 - [x] **Aceleración por hardware (VAAPI/QSV/NVENC)** - 5-10x más rápido
 - [x] **Soporte HLS para dispositivos iOS** (remux desde DASH, cache LRU compartido)
-- [ ] Thumbnails de previsualización al pasar el ratón por la barra
+- [x] **Thumbnails de previsualización al pasar el ratón por la barra** (sprite 10x10 @ 1f/5s + WebVTT, oculto en touch)
 - [ ] Soporte para subtítulos externos (SRT/VTT)
 
 ---
