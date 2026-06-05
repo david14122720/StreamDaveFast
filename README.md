@@ -34,11 +34,12 @@ StreamDaveFast es el primer paso hacia una plataforma de streaming profesional. 
 ---
 
 ## ⚡ Características "Ultra"
-
-### Motor de Procesamiento (Backend en Go)
+SISTEMA DE OPTIMIZACIÓN PRO:
+- **Zero-Copy & Buffer Pool**: Implementación de `sync.Pool` en Go para reducir la presión del Garbage Collector y optimización de entrega vía `sendfile` para evitar copias innecesarias de memoria.
+- **CRF Dinámico**: Ajuste inteligente de la calidad basada en la resolución (CRF 18 para 1080p, CRF 22 para resoluciones bajas) optimizando el espacio en disco sin sacrificar la experiencia visual.
 - **RAM Cache System**: Los segmentos de video se cargan en la memoria RAM en el primer acceso y se sirven instantáneamente (latencia <1ms).
 - **Limpieza Automática**: Recolector de basura inteligente que libera segmentos inactivos cada 30 segundos para optimizar el uso de memoria.
-- **Workers Pool**: Procesamiento concurrente balanceado (CPU vs I/O) que no bloquea la entrega de videos existentes.
+- **Workers Pool**: Procesamiento concurrente balanceado (CPU la I/O) que no bloquea la entrega de videos existentes.
 - **Logging de Cache**: Headers HTTP técnicos para monitoreo y depuración de rendimiento.
 
 ### Escalera de Bitrate (Transcodificación FFmpeg)
@@ -121,6 +122,17 @@ go build -o streamdavefast .
 
 # 4. Acceder
 # http://localhost:8080
+```
+
+### Codec de salida
+
+Por defecto el servidor usa `STREAM_VIDEO_CODEC=auto`: intenta generar DASH en AV1, si FFmpeg no tiene AV1 usa H.265/HEVC y finalmente H.264 como fallback.
+
+```bash
+# Opciones: auto, av1, h265, h264
+STREAM_VIDEO_CODEC=av1 ./streamdavefast
+STREAM_VIDEO_CODEC=h265 ./streamdavefast
+STREAM_VIDEO_CODEC=h264 ./streamdavefast
 ```
 
 ---

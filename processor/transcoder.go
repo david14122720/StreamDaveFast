@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -12,9 +13,27 @@ import (
 // QualityProfile define una variante de calidad para la transcodificación
 type QualityProfile struct {
 	Name         string
-	Resolution   string
+	MaxWidth     int
+	MaxHeight    int
 	VideoBitrate string
 	Label        string
+}
+
+// VideoCodec define el codec de salida usado para el DASH.
+type VideoCodec string
+
+const (
+	CodecH264 VideoCodec = "h264"
+	CodecH265 VideoCodec = "h265"
+	CodecAV1  VideoCodec = "av1"
+)
+
+// EncoderConfig contiene la configuración concreta que se pasará a FFmpeg.
+type EncoderConfig struct {
+	Codec       VideoCodec
+	Encoder     string
+	DisplayName string
+	BitrateRate float64
 }
 
 // CheckFFmpeg verifica que FFmpeg esté instalado y tenga los codecs necesarios
@@ -25,13 +44,13 @@ func CheckFFmpeg() error {
 
 // Perfiles de calidad estándar (escalera de bitrate optimizada para evitar VBV underflow)
 var QualityProfiles = []QualityProfile{
-	{Name: "144p", Resolution: "256x144", VideoBitrate: "200k", Label: "Ultra Económico (GPRS/Edge)"},
-	{Name: "240p", Resolution: "426x240", VideoBitrate: "400k", Label: "Económico (3G)"},
-	{Name: "480p", Resolution: "854x480", VideoBitrate: "1500k", Label: "Estándar (WiFi)"},
-	{Name: "720p", Resolution: "1280x720", VideoBitrate: "3000k", Label: "HD (4G/Fibra)"},
-	{Name: "1080p", Resolution: "1920x1080", VideoBitrate: "5000k", Label: "Full HD (Pro)"}, // Aumentado para evitar underflow
-	{Name: "1440p", Resolution: "2560x1440", VideoBitrate: "8000k", Label: "2K (Ultra HD)"},
-	{Name: "2160p", Resolution: "3840x2160", VideoBitrate: "15000k", Label: "4K (Cine)"},
+	{Name: "144p", MaxWidth: 256, MaxHeight: 144, VideoBitrate: "200k", Label: "Ultra Económico (GPRS/Edge)"},
+	{Name: "240p", MaxWidth: 426, MaxHeight: 240, VideoBitrate: "400k", Label: "Económico (3G)"},
+	{Name: "480p", MaxWidth: 854, MaxHeight: 480, VideoBitrate: "1500k", Label: "Estándar (WiFi)"},
+	{Name: "720p", MaxWidth: 1280, MaxHeight: 720, VideoBitrate: "3000k", Label: "HD (4G/Fibra)"},
+	{Name: "1080p", MaxWidth: 1920, MaxHeight: 1080, VideoBitrate: "5000k", Label: "Full HD (Pro)"},
+	{Name: "1440p", MaxWidth: 2560, MaxHeight: 1440, VideoBitrate: "8000k", Label: "2K (Ultra HD)"},
+	{Name: "2160p", MaxWidth: 3840, MaxHeight: 2160, VideoBitrate: "15000k", Label: "4K (Cine)"},
 }
 
 // TranscodeResult contiene información sobre la transcodificación completada
@@ -41,6 +60,8 @@ type TranscodeResult struct {
 	Qualities    []string  `json:"qualities"`
 	Duration     float64   `json:"duration_seconds"`
 	ProcessedAt  time.Time `json:"processed_at"`
+	Codec        string    `json:"codec"`
+	Encoder      string    `json:"encoder"`
 }
 
 // HardwareDetector detecta qué aceleración por hardware está disponible
@@ -80,13 +101,64 @@ func DetectHardware() HardwareDetector {
 }
 
 // GetEncoderConfig devuelve la configuración del encoder basada en el hardware disponible
-func GetEncoderConfig(hw HardwareDetector) (videoEncoder, hwAccel string) {
-	// Por ahora deshabilitamos la aceleración por hardware para evitar problemas de compatibilidad
-	// con múltiples streams DASH. El problema es que VAAPI + libx264 con filtros múltiples
-	// no funciona bien con DASH multi-stream.
-	// Nota: Para usar HW, se necesitaría codificación nativa con h264_vaapi (no libx264)
-	// o procesar streams uno por uno (no en paralelo como hace DASH)
-	return "libx264", ""
+func GetEncoderConfig() EncoderConfig {
+	available := AvailableEncoders()
+	preferred := strings.ToLower(strings.TrimSpace(os.Getenv("STREAM_VIDEO_CODEC")))
+	if preferred == "" {
+		preferred = "auto"
+	}
+
+	candidates := []VideoCodec{CodecAV1, CodecH265, CodecH264}
+	switch preferred {
+	case "av1":
+		candidates = []VideoCodec{CodecAV1, CodecH265, CodecH264}
+	case "h265", "hevc":
+		candidates = []VideoCodec{CodecH265, CodecAV1, CodecH264}
+	case "h264", "avc":
+		candidates = []VideoCodec{CodecH264, CodecAV1, CodecH265}
+	case "auto":
+	default:
+		fmt.Printf("⚠️ STREAM_VIDEO_CODEC=%q no reconocido; usando auto\n", preferred)
+	}
+
+	for _, codec := range candidates {
+		if config, ok := encoderForCodec(codec, available); ok {
+			return config
+		}
+	}
+
+	return EncoderConfig{Codec: CodecH264, Encoder: "libx264", DisplayName: "H.264 / AVC", BitrateRate: 1.0}
+}
+
+// AvailableEncoders devuelve los encoders de FFmpeg disponibles.
+func AvailableEncoders() string {
+	cmd := exec.Command("ffmpeg", "-hide_banner", "-encoders")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return string(output)
+}
+
+func encoderForCodec(codec VideoCodec, available string) (EncoderConfig, bool) {
+	switch codec {
+	case CodecAV1:
+		if strings.Contains(available, "libsvtav1") {
+			return EncoderConfig{Codec: CodecAV1, Encoder: "libsvtav1", DisplayName: "AV1", BitrateRate: 0.55}, true
+		}
+		if strings.Contains(available, "libaom-av1") {
+			return EncoderConfig{Codec: CodecAV1, Encoder: "libaom-av1", DisplayName: "AV1", BitrateRate: 0.55}, true
+		}
+	case CodecH265:
+		if strings.Contains(available, "libx265") {
+			return EncoderConfig{Codec: CodecH265, Encoder: "libx265", DisplayName: "H.265 / HEVC", BitrateRate: 0.65}, true
+		}
+	case CodecH264:
+		if strings.Contains(available, "libx264") {
+			return EncoderConfig{Codec: CodecH264, Encoder: "libx264", DisplayName: "H.264 / AVC", BitrateRate: 1.0}, true
+		}
+	}
+	return EncoderConfig{}, false
 }
 
 // GetVideoDuration obtiene la duración de un video en segundos
@@ -122,22 +194,36 @@ func GetVideoResolution(inputPath string) (int, int, error) {
 	return w, h, nil
 }
 
+// HasVideoStream valida que FFprobe pueda leer al menos un stream de video.
+func HasVideoStream(inputPath string) error {
+	cmd := exec.Command("ffprobe",
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=codec_type",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		inputPath,
+	)
+	output, err := cmd.Output()
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(output)) != "video" {
+		return fmt.Errorf("no se encontró un stream de video válido")
+	}
+	return nil
+}
+
 // SelectProfiles elige los perfiles de calidad adecuados según la resolución del video original
 func SelectProfiles(width, height int) []QualityProfile {
 	var selected []QualityProfile
-	resolutions := map[string]int{
-		"144p":  144,
-		"240p":  240,
-		"480p":  480,
-		"720p":  720,
-		"1080p": 1080,
-		"1440p": 1440,
-		"2160p": 2160,
+	shortEdge := width
+	if height < shortEdge {
+		shortEdge = height
 	}
 	for _, profile := range QualityProfiles {
-		targetHeight := resolutions[profile.Name]
-		// Añadimos perfil si la altura es menor o igual a la original (con tolerancia de 10px para variaciones menores)
-		if targetHeight <= (height + 10) {
+		targetShortEdge := profile.MaxHeight
+		// La calidad se decide por el lado corto para soportar horizontal, vertical, cuadrado y ultrawide.
+		if targetShortEdge <= (shortEdge + 10) {
 			selected = append(selected, profile)
 		}
 	}
@@ -148,23 +234,99 @@ func SelectProfiles(width, height int) []QualityProfile {
 	return selected
 }
 
+func adjustedBitrate(profile QualityProfile, config EncoderConfig) string {
+	var bitrateNum int
+	fmt.Sscanf(profile.VideoBitrate, "%dk", &bitrateNum)
+	if bitrateNum <= 0 {
+		return profile.VideoBitrate
+	}
+	return fmt.Sprintf("%dk", int(float64(bitrateNum)*config.BitrateRate))
+}
+
+func dashScaleFilter(profile QualityProfile) string {
+	landscapeWidth := profile.MaxWidth
+	landscapeHeight := profile.MaxHeight
+	portraitWidth := profile.MaxHeight
+	portraitHeight := profile.MaxWidth
+	return fmt.Sprintf(
+		"scale=w='if(gte(iw,ih),%d,%d)':h='if(gte(iw,ih),%d,%d)':force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos",
+		landscapeWidth,
+		portraitWidth,
+		landscapeHeight,
+		portraitHeight,
+	)
+}
+
+func appendCodecOptions(args []string, streamIndex int, profile QualityProfile, config EncoderConfig, videoBitrate string, maxRate string, bufSize string) []string {
+	args = append(args,
+		fmt.Sprintf("-c:v:%d", streamIndex), config.Encoder,
+		fmt.Sprintf("-b:v:%d", streamIndex), videoBitrate,
+		"-filter:v:"+fmt.Sprintf("%d", streamIndex), dashScaleFilter(profile),
+		fmt.Sprintf("-g:v:%d", streamIndex), "120",
+	)
+
+	switch config.Codec {
+	case CodecAV1:
+		args = append(args,
+			fmt.Sprintf("-preset:v:%d", streamIndex), "8",
+			fmt.Sprintf("-svtav1-params:v:%d", streamIndex), "rc=1",
+			fmt.Sprintf("-pix_fmt:v:%d", streamIndex), "yuv420p",
+		)
+	case CodecH265:
+		args = append(args,
+			fmt.Sprintf("-maxrate:v:%d", streamIndex), maxRate,
+			fmt.Sprintf("-bufsize:v:%d", streamIndex), bufSize,
+			fmt.Sprintf("-preset:v:%d", streamIndex), "fast",
+			fmt.Sprintf("-crf:v:%d", streamIndex), "24",
+			fmt.Sprintf("-tag:v:%d", streamIndex), "hvc1",
+			fmt.Sprintf("-x265-params:v:%d", streamIndex), "keyint=120:min-keyint=120:scenecut=0:open-gop=0",
+			fmt.Sprintf("-pix_fmt:v:%d", streamIndex), "yuv420p",
+		)
+	case CodecH264:
+		h264Profile := "main"
+		level := "4.0"
+		// IMPLEMENTACIÓN DE CRF DINÁMICO:
+		// Para 1080p usamos CRF 18 (Alta calidad), para el resto usamos 22
+		// Esto optimiza el espacio sin sacrificar la experiencia en Full HD.
+		crf := "22"
+		if profile.Name == "1080p" {
+			h264Profile = "high"
+			level = "4.1"
+			crf = "18"
+		}
+		args = append(args,
+			fmt.Sprintf("-maxrate:v:%d", streamIndex), maxRate,
+			fmt.Sprintf("-bufsize:v:%d", streamIndex), bufSize,
+			fmt.Sprintf("-preset:v:%d", streamIndex), "fast",
+			fmt.Sprintf("-profile:v:%d", streamIndex), h264Profile,
+			fmt.Sprintf("-level:v:%d", streamIndex), level,
+			fmt.Sprintf("-crf:v:%d", streamIndex), crf,
+			fmt.Sprintf("-x264-params:v:%d", streamIndex), "nal-hrd=vbr:keyint=120:min-keyint=120",
+			fmt.Sprintf("-pix_fmt:v:%d", streamIndex), "yuv420p",
+		)
+	}
+
+	return args
+}
+
 // TranscodeVideo procesa un video a DASH con múltiples calidades
 func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error) {
 	startTime := time.Now()
 
 	// Detectar hardware disponible
 	hw := DetectHardware()
-	videoEncoder, hwAccel := GetEncoderConfig(hw)
+	encoderConfig := GetEncoderConfig()
 
 	if hw.VAAPI {
-		fmt.Printf("🟡 VAAPI detectado pero deshabilitado para compatibilidad con DASH multi-stream\n")
+		fmt.Printf("🟡 VAAPI detectado; usando encoder de software para compatibilidad DASH multi-stream\n")
 	} else if hw.QSV {
-		fmt.Printf("🟡 QSV detectado pero deshabilitado para compatibilidad con DASH multi-stream\n")
+		fmt.Printf("🟡 QSV detectado; usando encoder de software para compatibilidad DASH multi-stream\n")
 	} else if hw.NVENC {
-		fmt.Printf("🟡 NVENC detectado pero deshabilitado para compatibilidad con DASH multi-stream\n")
+		fmt.Printf("🟡 NVENC detectado; usando encoder de software para compatibilidad DASH multi-stream\n")
 	} else {
-		fmt.Printf("🔴 Usando CPU (libx264)\n")
+		fmt.Printf("🔴 Usando CPU (%s)\n", encoderConfig.Encoder)
 	}
+	fmt.Printf("🎞️ Codec de salida: %s (%s)\n", encoderConfig.DisplayName, encoderConfig.Encoder)
 
 	// Limpiar directorio de salida si existe
 	if _, err := os.Stat(outputDir); err == nil {
@@ -194,11 +356,6 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 	// Construir argumentos de FFmpeg
 	args := []string{}
 
-	// Añadir aceleración por hardware si está disponible
-	if hwAccel != "" {
-		args = append(args, strings.Split(hwAccel, " ")...)
-	}
-
 	args = append(args,
 		"-i", inputPath,
 		"-y", // Sobrescribir sin preguntar
@@ -208,39 +365,23 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 	for i, p := range profiles {
 		// Parseamos el bitrate para cálculos de VBV (Buffer Verifier)
 		var bitrateNum int
-		fmt.Sscanf(p.VideoBitrate, "%dk", &bitrateNum)
+		videoBitrate := adjustedBitrate(p, encoderConfig)
+		fmt.Sscanf(videoBitrate, "%dk", &bitrateNum)
 
 		// VBV con más margen para evitar underflow en escenas de acción
 		maxRate := fmt.Sprintf("%dk", int(float64(bitrateNum)*1.5)) // 50% de margen (antes era 20%)
 		bufSize := fmt.Sprintf("%dk", bitrateNum*3)                 // Buffer de 3s (antes era 2s)
-		profile := "main"
-		level := "4.0"
-		crf := "20"
 
 		// Optimización específica para 1080p (mayor calidad)
-		if p.Name == "1080p" {
+		if p.Name == "1080p" && encoderConfig.Codec == CodecH264 {
 			maxRate = "6000k"
 			bufSize = "12000k"
-			profile = "high"
-			level = "4.1"
-			crf = "18"
 		}
-
-		// Usar filter:v para escala con force_divisible_by=2 para evitar error de codec
-		scaleFilter := fmt.Sprintf("scale=%s:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos", p.Resolution)
 
 		args = append(args,
 			"-map", "0:v:0",
-			fmt.Sprintf("-c:v:%d", i), videoEncoder,
-			fmt.Sprintf("-b:v:%d", i), p.VideoBitrate,
-			fmt.Sprintf("-maxrate:v:%d", i), maxRate,
-			fmt.Sprintf("-bufsize:v:%d", i), bufSize,
-			"-filter:v:"+fmt.Sprintf("%d", i), scaleFilter,
-			fmt.Sprintf("-profile:v:%d", i), profile,
-			fmt.Sprintf("-level:v:%d", i), level,
-			fmt.Sprintf("-crf:v:%d", i), crf,
-			fmt.Sprintf("-x264-params:v:%d", i), "nal-hrd=vbr:keyint=120:min-keyint=120",
 		)
+		args = appendCodecOptions(args, i, p, encoderConfig, videoBitrate, maxRate, bufSize)
 	}
 
 	// 2. Añadir flujo de AUDIO ÚNICO (Master Audio)
@@ -258,7 +399,6 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 
 	// Opciones globales de encoding (para calidad pro y concurrencia)
 	args = append(args,
-		"-preset", "fast",
 		"-threads", "0",
 		"-force_key_frames", "expr:gte(t,n_forced*5)", // Keyframe basado en tiempo real
 		"-sc_threshold", "0", // Desactivar detección de cambio de escena
@@ -290,7 +430,7 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 	fmt.Printf("🎬 Iniciando transcodificación de %s...\n", filepath.Base(inputPath))
 	fmt.Printf("   🎵 Audio: Master Audio AAC 128kbps (Continuo)\n")
 	for _, p := range profiles {
-		fmt.Printf("   📺 %s (%s) - Video: %s\n", p.Name, p.Label, p.VideoBitrate)
+		fmt.Printf("   📺 %s (%s) - Video: %s\n", p.Name, p.Label, adjustedBitrate(p, encoderConfig))
 	}
 
 	if err := cmd.Run(); err != nil {
@@ -305,9 +445,18 @@ func TranscodeVideo(inputPath string, outputDir string) (*TranscodeResult, error
 	for i, p := range profiles {
 		qualityNames[i] = p.Name
 	}
+	duration := 0.0
+	if durationText, err := GetVideoDuration(inputPath); err == nil {
+		duration, _ = strconv.ParseFloat(durationText, 64)
+	}
 
 	return &TranscodeResult{
 		VideoName:    filepath.Base(inputPath),
 		ManifestPath: filepath.Join(outputDir, "manifest.mpd"),
+		Qualities:    qualityNames,
+		Duration:     duration,
+		ProcessedAt:  time.Now(),
+		Codec:        string(encoderConfig.Codec),
+		Encoder:      encoderConfig.Encoder,
 	}, nil
 }

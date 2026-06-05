@@ -26,6 +26,12 @@ type CachedSegment struct {
 var (
 	segmentCache = make(map[string]*CachedSegment)
 	cacheMutex   sync.Mutex
+	// BufferPool reduce la presión sobre el GC reutilizando slices de memoria
+	bufferPool = sync.Pool{
+		New: func() interface{} {
+			return make([]byte, 0, 1024*1024) // Pre-aloca 1MB como base
+		},
+	}
 )
 
 var queue *processor.Queue
@@ -38,6 +44,9 @@ type VideoInfo struct {
 	IsProcessed bool   `json:"is_processed"`
 	ManifestURL string `json:"manifest_url,omitempty"`
 	DirectURL   string `json:"direct_url,omitempty"`
+	Codec       string `json:"codec,omitempty"`
+	Width       int    `json:"width,omitempty"`
+	Height      int    `json:"height,omitempty"`
 }
 
 func main() {
@@ -232,19 +241,21 @@ func handleListVideos(w http.ResponseWriter, r *http.Request) {
 		if file.IsDir() {
 			continue
 		}
-		ext := strings.ToLower(filepath.Ext(file.Name()))
-		if ext != ".mp4" && ext != ".mkv" && ext != ".webm" && ext != ".avi" && ext != ".mov" {
+		info, err := file.Info()
+		if err != nil || info.Size() == 0 {
 			continue
 		}
 
 		name := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
-		info, _ := file.Info()
+		width, height, _ := processor.GetVideoResolution(filepath.Join("Videos", file.Name()))
 
 		v := &VideoInfo{
 			Name:      name,
 			FileName:  file.Name(),
 			Size:      info.Size(),
 			DirectURL: "/Videos/" + file.Name(),
+			Width:     width,
+			Height:    height,
 		}
 		videoMap[sanitizeName(name)] = v
 	}
@@ -271,6 +282,7 @@ func handleListVideos(w http.ResponseWriter, r *http.Request) {
 			}
 			v.IsProcessed = true
 			v.ManifestURL = "/" + manifestPath
+			v.Codec = detectManifestCodec(manifestPath)
 		}
 	}
 
@@ -301,16 +313,14 @@ func handleUploadVideo(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Validar extensión
-	ext := strings.ToLower(filepath.Ext(header.Filename))
-	validExts := map[string]bool{".mp4": true, ".mkv": true, ".webm": true, ".avi": true, ".mov": true}
-	if !validExts[ext] {
-		jsonError(w, "Formato de video no soportado. Usa: mp4, mkv, webm, avi, mov", http.StatusBadRequest)
+	fileName := filepath.Base(header.Filename)
+	if fileName == "." || fileName == string(filepath.Separator) || strings.TrimSpace(fileName) == "" {
+		jsonError(w, "Nombre de archivo inválido", http.StatusBadRequest)
 		return
 	}
 
 	// Guardar archivo
-	dstPath := filepath.Join("Videos", header.Filename)
+	dstPath := filepath.Join("Videos", fileName)
 	dst, err := os.Create(dstPath)
 	if err != nil {
 		jsonError(w, "Error al guardar el archivo", http.StatusInternalServerError)
@@ -322,22 +332,29 @@ func handleUploadVideo(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "Error al copiar el archivo", http.StatusInternalServerError)
 		return
 	}
+	dst.Close()
 
-	fmt.Printf("📤 Video subido: %s (%d MB)\n", header.Filename, header.Size/(1024*1024))
+	if err := processor.HasVideoStream(dstPath); err != nil {
+		os.Remove(dstPath)
+		jsonError(w, "El archivo no contiene un video válido o FFmpeg no puede leerlo: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	fmt.Printf("📤 Video subido: %s (%d MB)\n", fileName, header.Size/(1024*1024))
 
 	// Auto-procesar el video
 	autoProcess := r.FormValue("auto_process")
 	if autoProcess == "true" {
-		name := strings.TrimSuffix(header.Filename, ext)
+		name := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 		outputDir := filepath.Join("processed", sanitizeName(name))
 		jobID := fmt.Sprintf("job_%d", time.Now().UnixNano())
-		queue.Enqueue(jobID, dstPath, outputDir, header.Filename)
+		queue.Enqueue(jobID, dstPath, outputDir, fileName)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "success",
-		"message": "Video subido correctamente: " + header.Filename,
+		"message": "Video subido correctamente: " + fileName,
 		"path":    dstPath,
 	})
 }
@@ -401,18 +418,18 @@ func handleProcessAllVideos(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		ext := strings.ToLower(filepath.Ext(file.Name()))
-		if ext != ".mp4" && ext != ".mkv" && ext != ".webm" && ext != ".avi" && ext != ".mov" {
+		inputPath := filepath.Join("Videos", file.Name())
+		if err := processor.HasVideoStream(inputPath); err != nil {
+			fmt.Printf("⚠️ Saltando archivo no procesable como video: %s (%v)\n", file.Name(), err)
 			continue
 		}
 
-		name := strings.TrimSuffix(file.Name(), ext)
+		name := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
 		outputDir := filepath.Join("processed", sanitizeName(name))
 		manifestPath := filepath.Join(outputDir, "manifest.mpd")
 
 		// Solo procesar si no existe el manifiesto
 		if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
-			inputPath := filepath.Join("Videos", file.Name())
 			jobID := fmt.Sprintf("job_%d", time.Now().UnixNano())
 			queue.Enqueue(jobID, inputPath, outputDir, file.Name())
 			queued = append(queued, file.Name())
@@ -470,6 +487,24 @@ func sanitizeName(name string) string {
 	return strings.ToLower(replacer.Replace(name))
 }
 
+func detectManifestCodec(manifestPath string) string {
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return ""
+	}
+	content := strings.ToLower(string(data))
+	switch {
+	case strings.Contains(content, "av01"):
+		return "av1"
+	case strings.Contains(content, "hvc1") || strings.Contains(content, "hev1"):
+		return "h265"
+	case strings.Contains(content, "avc1") || strings.Contains(content, "avc3"):
+		return "h264"
+	default:
+		return ""
+	}
+}
+
 // jsonError devuelve un error JSON
 func jsonError(w http.ResponseWriter, message string, code int) {
 	w.Header().Set("Content-Type", "application/json")
@@ -498,9 +533,12 @@ func handleGetVideo(w http.ResponseWriter, r *http.Request) {
 	manifestPath := filepath.Join("processed", sanitizedName, "manifest.mpd")
 
 	isProcessed := false
+	codec := ""
 	if _, err := os.Stat(manifestPath); err == nil {
 		isProcessed = true
+		codec = detectManifestCodec(manifestPath)
 	}
+	width, height, _ := processor.GetVideoResolution(filePath)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(VideoInfo{
@@ -515,6 +553,9 @@ func handleGetVideo(w http.ResponseWriter, r *http.Request) {
 			return ""
 		}(),
 		DirectURL: "/Videos/" + videoName,
+		Codec:     codec,
+		Width:     width,
+		Height:    height,
 	})
 }
 
