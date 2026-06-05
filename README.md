@@ -14,16 +14,20 @@ StreamDaveFast es el primer paso hacia una plataforma de streaming profesional. 
                 ┌─────────────────────────────┐
    MP4/MKV   →  │   FFmpeg Transcoder (Go)    │  →  Perfil High 4.1 (1080p)
    subido       │   GOP 5s | Keyframes Fixes  │     VBV Estricto (Anti-picos)
+                │   Pass 1: DASH (encode)     │
+                │   Pass 2: HLS  (remux -c copy)  → master.m3u8 + seg-*.ts
                 └──────────┬──────────────────┘
                            ↓
-                ┌─────────────────────────────┐  →  Cache en RAM (LRU)
-                │    Segmentos DASH (.m4s)     │     Serving instantáneo
-                │    + Manifiesto (.mpd)       │     Headers X-Cache: HIT
+                ┌─────────────────────────────┐  →  Cache LRU en RAM (256MB/10MB)
+                │  Segmentos DASH (.m4s)      │     DASH + HLS comparten pool
+                │  Segmentos HLS  (.ts)       │     Headers X-Cache: HIT
+                │  Manifiestos .mpd / .m3u8   │
                 └──────────┬──────────────────┘
                            ↓
                 ┌─────────────────────────────┐  →  Buffer Meta: 20s
                 │       Shaka Player          │     Ajuste Auto de Audio
-                │  Bitrate Adaptativo (ABR)   │     UI Throttling (250ms)
+                │  iOS Safari → HLS (.m3u8)   │     UI Throttling (250ms)
+                │  Resto del mundo → DASH     │
                 └─────────────────────────────┘
 ```
 
@@ -135,6 +139,50 @@ STREAM_VIDEO_CODEC=h265 ./streamdavefast
 STREAM_VIDEO_CODEC=h264 ./streamdavefast
 ```
 
+### HLS para iOS
+
+Cada video produce dos manifests a partir del mismo encode (el pass HLS es un remux `-c copy` del ladder DASH, así que el costo de tiempo extra es ~0 y la calidad se preserva bit-a-bit):
+
+| Manifest | MIME | Ruta |
+|----------|------|------|
+| DASH | `application/dash+xml` | `/processed/{video}/manifest.mpd` |
+| HLS | `application/vnd.apple.mpegurl` | `/processed/{video}/master.m3u8` |
+| HLS segments | `video/mp2t` | `/processed/{video}/seg-NNN.ts` |
+
+Los segmentos DASH (`.m4s`) y HLS (`.ts`) comparten el mismo cache LRU en RAM (256 MB totales, 10 MB por entrada, eviction por `LastAccess`). Inspeccioná el uso en `/api/stats`:
+
+```json
+{ "cache_count": 42, "cache_bytes": 134217728, "cache_cap": 268435456, "status": "online" }
+```
+
+#### Regla de detección iOS
+
+El frontend elige HLS sobre DASH sólo para Safari en iOS:
+
+```js
+const isIOS = /iP(hone|ad|od)|Safari/.test(navigator.userAgent)
+  && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
+```
+
+Los navegadores iOS de terceros (Chrome iOS, Firefox iOS, Edge iOS) traen su propio engine y SÍ soportan DASH, por eso los excluimos. Se usa sólo `navigator.userAgent` — `navigator.platform` está deprecado. La transformación `manifest.mpd` → `master.m3u8` se hace client-side vía `String.replace`, así que el backend no necesita un campo nuevo en `VideoInfo`.
+
+### Códigos de respuesta de error
+
+Todos los endpoints de la API devuelven errores en formato JSON:
+
+```json
+{ "error": "Mensaje legible por humanos" }
+```
+
+| Código | Cuándo | Endpoints |
+|--------|--------|-----------|
+| `400 Bad Request` | Body/filename inválido, sin video stream, JSON malformado | `/api/upload`, `/api/process`, `/api/delete`, `/api/jobs/{id}` |
+| `404 Not Found` | Video o job inexistente | `/api/process`, `/api/jobs/{id}`, `/api/videos/{name}` |
+| `405 Method Not Allowed` | Método HTTP no soportado | `/api/upload`, `/api/process`, `/api/process/all`, `/api/delete` |
+| `500 Internal Server Error` | Fallo de I/O o FFmpeg inesperado | `/api/upload`, `/api/process/all`, `/api/delete` |
+
+El segmento de video (GET `/processed/...`) usa los códigos HTTP estándar del `http.ServeFile` (200 / 206 / 404 / 416); el cuerpo en 4xx/5xx no es JSON.
+
 ---
 
 ## ⌨️ Atajos de Teclado
@@ -157,7 +205,7 @@ STREAM_VIDEO_CODEC=h264 ./streamdavefast
 - [x] Reducción de carga en el hilo principal del navegador (UI Throttling)
 - [x] Soporte para nombres de archivos con caracteres especiales
 - [x] **Aceleración por hardware (VAAPI/QSV/NVENC)** - 5-10x más rápido
-- [ ] Soporte HLS para dispositivos iOS
+- [x] **Soporte HLS para dispositivos iOS** (remux desde DASH, cache LRU compartido)
 - [ ] Thumbnails de previsualización al pasar el ratón por la barra
 - [ ] Soporte para subtítulos externos (SRT/VTT)
 
