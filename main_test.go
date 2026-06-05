@@ -100,6 +100,70 @@ func TestHLSSegmentMIME(t *testing.T) {
 	}
 }
 
+// TestThumbnailsVTTMIME is the new PR #2 acceptance test: the router must
+// return text/vtt for thumbnails.vtt so Shaka's addThumbnailsTrack() can
+// parse it. We also assert the body comes back intact and the cache header
+// tells the browser to keep the file for an hour (so the player doesn't
+// re-fetch it on every seek).
+func TestThumbnailsVTTMIME(t *testing.T) {
+	root := fakeProcessedTree(t, "demo", map[string]string{
+		"thumbnails.vtt": "WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nthumbnails.jpg#xywh=0,0,160,90\n",
+	})
+	ts := serveFromRoot(t, root)
+
+	resp, err := http.Get(ts.URL + "/processed/demo/thumbnails.vtt")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "text/vtt" {
+		t.Errorf("Content-Type: got %q, want %q (Shaka's VTT parser needs this)", got, "text/vtt")
+	}
+	// Cache-Control is advisory here, but the design promises it. If we
+	// ever drop the max-age, every seek will re-fetch the VTT.
+	if cc := resp.Header.Get("Cache-Control"); !strings.Contains(cc, "max-age") {
+		t.Errorf("Cache-Control should contain max-age for browser caching, got %q", cc)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.HasPrefix(string(body), "WEBVTT") {
+		t.Errorf("body should start with WEBVTT, got %q", string(body))
+	}
+}
+
+// TestThumbnailsJPGRouteMIME confirms the sprite image is served as JPEG
+// with an immutable cache header (the file never changes after the
+// transcoding pass completes, so we want a long max-age).
+func TestThumbnailsJPGRouteMIME(t *testing.T) {
+	// 1x1 transparent GIF is small enough for the test; we don't care
+	// about the bytes — only that the router identifies the extension
+	// correctly. Real JPEG data isn't required to exercise the MIME
+	// lookup.
+	root := fakeProcessedTree(t, "demo", map[string]string{
+		"thumbnails.jpg": "\xff\xd8\xff\xe0\x00\x10JFIF",
+	})
+	ts := serveFromRoot(t, root)
+
+	resp, err := http.Get(ts.URL + "/processed/demo/thumbnails.jpg")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "image/jpeg" {
+		t.Errorf("Content-Type: got %q, want %q", got, "image/jpeg")
+	}
+	if cc := resp.Header.Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+		t.Errorf("Cache-Control should mark .jpg as immutable, got %q", cc)
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a

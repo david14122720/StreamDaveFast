@@ -294,7 +294,7 @@ func handleDASHFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Fallback para manifiestos (.mpd, .m3u8) u otros archivos
+	// 3. Fallback para manifiestos (.mpd, .m3u8, .vtt, .jpg) u otros archivos
 	if ext == ".mpd" {
 		w.Header().Set("Content-Type", "application/dash+xml")
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -305,6 +305,20 @@ func handleDASHFiles(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/iso.segment")
 	} else if ext == ".ts" {
 		w.Header().Set("Content-Type", "video/mp2t")
+	} else if ext == ".vtt" {
+		// PR #2: WebVTT sprite pointer for Shaka's addThumbnailsTrack().
+		// Files are tiny (a few hundred bytes for 500s of cues), so we
+		// always serve from disk — the browser will cache the response
+		// itself with the max-age header below.
+		w.Header().Set("Content-Type", "text/vtt")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+	} else if ext == ".jpg" {
+		// PR #2: sprite image for the preview tooltip. Single read, no
+		// RAM cache (the file is loaded once and the browser caches it
+		// for the rest of the session; the LRU is for streaming
+		// segments that are requested many times in quick succession).
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
 	}
 
 	// Usar http.ServeFile para activar 'sendfile' en el fallback
