@@ -14,10 +14,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <!-- Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
 
     <!-- Shaka Player -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.3.5/shaka-player.compiled.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/shaka-player@5.1.7/dist/shaka-player.compiled.js"></script>
 
     <style>
         :root {
@@ -57,6 +57,7 @@
             color: var(--text-primary);
             min-height: 100vh;
             overflow-x: hidden;
+            -webkit-text-size-adjust: 100%;
         }
 
         /* ===== MOBILE-FIRST BASE STYLES ===== */
@@ -66,67 +67,63 @@
             background: var(--glass);
             backdrop-filter: blur(20px);
             border-bottom: 1px solid var(--border);
-            padding: 12px 16px;
+            padding: 8px max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left));
             display: flex;
-            flex-direction: column;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
             position: sticky;
             top: 0;
             z-index: 100;
-            text-align: center;
         }
 
         .logo {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
+            flex-shrink: 1;
+            min-width: 0;
         }
 
         .logo-icon {
-            width: 40px;
-            height: 40px;
+            width: 34px;
+            height: 34px;
             background: var(--gradient-primary);
-            border-radius: 12px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 18px;
+            font-size: 15px;
             color: white;
             box-shadow: var(--shadow-glow);
+            flex-shrink: 0;
         }
 
         .logo-text {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 700;
             background: var(--gradient-primary);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .logo-badge {
-            font-size: 9px;
-            padding: 2px 8px;
-            background: var(--accent-3);
-            color: var(--bg-primary);
-            border-radius: 20px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            display: none;
         }
 
         .header-actions {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             align-items: center;
-            width: 100%;
-            justify-content: center;
+            margin-left: auto;
+            flex-shrink: 0;
         }
 
         .header-btn {
-            flex: 1;
-            padding: 12px;
+            padding: 8px 12px;
             border: 1px solid var(--border);
             background: var(--bg-card);
             color: var(--text-primary);
@@ -138,9 +135,14 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            gap: 6px;
             transition: var(--transition);
             min-height: var(--touch-target);
+            white-space: nowrap;
+        }
+
+        .header-btn i {
+            font-size: 14px;
         }
 
         .header-btn:hover {
@@ -159,10 +161,11 @@
         .main-container {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 12px;
+            padding: 12px max(10px, env(safe-area-inset-right)) 20px max(10px, env(safe-area-inset-left));
             display: grid;
             grid-template-columns: 1fr;
             gap: 20px;
+            width: 100%;
         }
 
         /* Video Player */
@@ -175,10 +178,11 @@
         .video-wrapper {
             position: relative;
             background: #000;
-            border-radius: var(--radius);
+            border-radius: 12px;
             overflow: hidden;
             aspect-ratio: 16 / 9;
             cursor: pointer;
+            width: 100%;
         }
 
         .video-wrapper.hide-cursor {
@@ -273,7 +277,7 @@
             pointer-events: none;
         }
 
-        .video-wrapper.show-controls,
+        .video-wrapper.show-controls .player-controls,
         .video-wrapper.paused .player-controls {
             opacity: 1;
             transform: translateY(0);
@@ -303,6 +307,7 @@
             cursor: pointer;
             position: relative;
             overflow: hidden;
+            touch-action: none;
         }
 
         .progress-buffer {
@@ -321,6 +326,26 @@
             height: 100%;
             background: var(--gradient-primary);
             width: 0;
+            border-radius: 4px;
+        }
+        /* Thumb táctil del seek — visible en mobile, sigue al fill */
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            right: -6px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 12px;
+            height: 12px;
+            background: var(--accent-1);
+            border-radius: 50%;
+            box-shadow: 0 0 8px rgba(108, 99, 255, 0.6);
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .video-wrapper.show-controls .progress-fill::after,
+        .video-wrapper.paused .progress-fill::after {
+            opacity: 1;
         }
 
         .controls-row {
@@ -328,12 +353,14 @@
             align-items: center;
             justify-content: space-between;
             gap: 8px;
+            min-width: 0;
         }
 
         .controls-group {
             display: flex;
             align-items: center;
             gap: 4px;
+            min-width: 0;
         }
 
         .ctrl-btn {
@@ -406,6 +433,7 @@
             font-weight: 600;
             color: var(--text-primary);
             margin-bottom: 4px;
+            overflow-wrap: anywhere;
         }
 
         .now-playing-meta {
@@ -494,7 +522,7 @@
         }
 
         .playlist-items {
-            max-height: 400px;
+            max-height: min(400px, 52vh);
             overflow-y: auto;
         }
 
@@ -544,6 +572,7 @@
             display: flex;
             align-items: center;
             gap: 6px;
+            flex-wrap: wrap;
         }
 
         .tag {
@@ -556,7 +585,14 @@
         .tag.dash { background: rgba(108, 99, 255, 0.15); color: var(--accent-1); }
         .tag.raw { background: rgba(249, 115, 22, 0.15); color: #f97316; }
 
-        .process-btn {
+        .playlist-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .process-btn,
+        .delete-btn {
             padding: 4px 8px;
             background: transparent;
             border: 1px solid var(--border);
@@ -565,6 +601,12 @@
             cursor: pointer;
             font-size: 11px;
             transition: var(--transition);
+            min-height: 32px;
+        }
+        .delete-btn:hover {
+            border-color: #ef4444;
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
         }
 
         .status-bar {
@@ -672,22 +714,333 @@
         .quality-item:hover { background: var(--bg-hover); color: var(--text-primary); }
         .quality-item.active { color: var(--accent-1); background: rgba(108, 99, 255, 0.1); }
 
+        /* ===== PHONE OPTIMIZATION (max-width: 767px) ===== */
+        @media (max-width: 767px) {
+            .main-container {
+                gap: 12px;
+            }
+            .player-section {
+                gap: 10px;
+            }
+            .player-controls {
+                padding: 28px 10px 10px;
+            }
+            .progress-container {
+                gap: 4px;
+                margin-bottom: 8px;
+            }
+            .progress-track {
+                height: 10px;
+                border-radius: 5px;
+            }
+            .progress-fill {
+                border-radius: 5px;
+            }
+            .ctrl-btn {
+                width: 40px;
+                height: 40px;
+                flex: 0 0 40px;
+                font-size: 14px;
+                border-radius: 8px;
+            }
+            .ctrl-btn.play-main {
+                width: 48px;
+                height: 48px;
+                flex-basis: 48px;
+                font-size: 16px;
+            }
+            /* Ocultar prev/next en mobile — ahorran espacio */
+            .ctrl-btn#prevBtn,
+            .ctrl-btn#nextBtn {
+                display: none;
+            }
+            .controls-group {
+                gap: 4px;
+            }
+            .volume-slider {
+                display: none;
+            }
+            .quality-menu {
+                right: 50%;
+                transform: translateX(50%);
+                bottom: 44px;
+            }
+            .now-playing {
+                margin-top: 0;
+                padding: 10px 12px;
+                border-radius: 12px;
+            }
+            .now-playing-meta {
+                gap: 4px;
+            }
+            .upload-zone {
+                padding: 14px 12px;
+            }
+            .upload-zone i {
+                font-size: 22px;
+                margin-bottom: 4px;
+            }
+            .upload-zone p {
+                font-size: 11px;
+            }
+            .upload-zone p:last-child {
+                display: none; /* ocultar "Máx 2GB" en mobile */
+            }
+            .status-bar {
+                padding: 12px;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px;
+            }
+            .stat-item {
+                min-width: 0;
+            }
+            .stat-value {
+                font-size: 14px;
+                overflow-wrap: anywhere;
+            }
+            .playlist-item {
+                padding: 10px 12px;
+                gap: 8px;
+            }
+            .panel-header {
+                padding: 10px 12px;
+            }
+            .playlist-actions .delete-btn,
+            .playlist-actions .process-btn {
+                padding: 6px 10px;
+                min-height: 36px;
+            }
+            /* Toasts más angostos en mobile */
+            .toast-container {
+                left: 12px;
+                right: 12px;
+                bottom: 12px;
+            }
+            .toast {
+                max-width: 100%;
+                padding: 10px 14px;
+                font-size: 11px;
+            }
+        }
+
+        /* Icon-only header buttons en pantallas muy angostas */
+        @media (max-width: 480px) {
+            .app-header {
+                padding: 6px max(8px, env(safe-area-inset-right)) 6px max(8px, env(safe-area-inset-left));
+                gap: 6px;
+            }
+            .logo-icon {
+                width: 30px;
+                height: 30px;
+                font-size: 13px;
+                border-radius: 8px;
+            }
+            .logo-text {
+                font-size: 12px;
+            }
+            .header-btn {
+                font-size: 0;
+                padding: 8px;
+                gap: 0;
+                min-width: 38px;
+            }
+            .header-btn i {
+                font-size: 16px;
+            }
+            .ctrl-btn {
+                width: 38px;
+                height: 38px;
+                flex: 0 0 38px;
+                font-size: 13px;
+            }
+            .ctrl-btn.play-main {
+                width: 44px;
+                height: 44px;
+                flex-basis: 44px;
+                font-size: 15px;
+            }
+            .time-display {
+                min-width: 32px;
+                font-size: 9px;
+            }
+            .now-playing-title {
+                font-size: 12px;
+            }
+            .now-playing-meta {
+                font-size: 10px;
+            }
+        }
+
+        @media (max-width: 360px) {
+            .app-header {
+                padding: 4px max(6px, env(safe-area-inset-right)) 4px max(6px, env(safe-area-inset-left));
+                gap: 4px;
+            }
+            .header-actions {
+                gap: 4px;
+            }
+            .header-btn {
+                padding: 6px;
+                min-width: 34px;
+            }
+            .ctrl-btn {
+                width: 34px;
+                height: 34px;
+                flex: 0 0 34px;
+                font-size: 12px;
+            }
+            .ctrl-btn.play-main {
+                width: 40px;
+                height: 40px;
+                flex-basis: 40px;
+                font-size: 14px;
+            }
+            .time-display {
+                min-width: 28px;
+                font-size: 8px;
+            }
+        }
+
+        /* Landscape en mobile: controles minimalistas */
+        @media (max-height: 480px) and (orientation: landscape) {
+            .app-header {
+                padding: 4px max(8px, env(safe-area-inset-right)) 4px max(8px, env(safe-area-inset-left));
+                gap: 4px;
+            }
+            .logo-icon {
+                width: 26px;
+                height: 26px;
+                font-size: 11px;
+                border-radius: 6px;
+            }
+            .logo-text {
+                font-size: 11px;
+            }
+            .header-btn {
+                font-size: 0;
+                padding: 6px;
+                min-width: 32px;
+                min-height: 32px;
+            }
+            .header-btn i {
+                font-size: 14px;
+            }
+            .main-container {
+                padding: 6px max(8px, env(safe-area-inset-right)) 12px max(8px, env(safe-area-inset-left));
+                gap: 8px;
+            }
+            .player-section {
+                gap: 6px;
+            }
+            .player-controls {
+                padding: 16px 8px 6px;
+            }
+            .progress-container {
+                gap: 3px;
+                margin-bottom: 4px;
+            }
+            .progress-track {
+                height: 8px;
+            }
+            .ctrl-btn {
+                width: 32px;
+                height: 32px;
+                flex: 0 0 32px;
+                font-size: 11px;
+            }
+            .ctrl-btn.play-main {
+                width: 38px;
+                height: 38px;
+                flex-basis: 38px;
+                font-size: 13px;
+            }
+            .now-playing {
+                padding: 6px 10px;
+            }
+            .now-playing-title {
+                font-size: 11px;
+                margin-bottom: 2px;
+            }
+            .now-playing-meta {
+                font-size: 9px;
+                flex-direction: row;
+                gap: 8px;
+            }
+            .upload-zone {
+                padding: 8px 10px;
+            }
+            .upload-zone i {
+                font-size: 16px;
+                margin-bottom: 0;
+            }
+            .status-bar {
+                padding: 8px 10px;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+                gap: 4px;
+            }
+            .stat-value {
+                font-size: 12px;
+            }
+            .stat-label {
+                font-size: 8px;
+            }
+            .sidebar {
+                gap: 8px;
+            }
+            .playlist-panel .panel-header {
+                padding: 6px 10px;
+            }
+            .playlist-item {
+                padding: 6px 10px;
+                gap: 6px;
+            }
+            .playlist-item-name {
+                font-size: 11px;
+            }
+            .playlist-item-meta {
+                font-size: 10px;
+            }
+            .video-wrapper {
+                border-radius: 8px;
+            }
+        }
+
         /* ===== TABLET / LAPTOP (min-width: 768px) ===== */
         @media (min-width: 768px) {
             .app-header {
-                flex-direction: row;
-                justify-content: space-between;
-                padding: 16px 32px;
-                text-align: left;
+                gap: 12px;
+                padding: 12px max(24px, env(safe-area-inset-right)) 12px max(24px, env(safe-area-inset-left));
             }
-            .header-actions {
-                width: auto;
-                justify-content: flex-end;
+            .logo-icon {
+                width: 40px;
+                height: 40px;
+                font-size: 18px;
+                border-radius: 12px;
+            }
+            .logo-text {
+                font-size: 18px;
+            }
+            .logo-badge {
+                display: inline-block;
+                font-size: 9px;
+                padding: 2px 8px;
+                background: var(--accent-3);
+                color: var(--bg-primary);
+                border-radius: 20px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 1px;
             }
             .header-btn {
-                flex: none;
-                padding: 8px 16px;
+                padding: 10px 16px;
                 font-size: 13px;
+            }
+            .header-btn i {
+                font-size: 15px;
             }
             .main-container {
                 padding: 24px;
@@ -1041,9 +1394,13 @@
         }
 
         async function initShakaPlayer() {
-            shakaPlayer = new shaka.Player(v);
+            // Shaka 5.0: el constructor ya no acepta mediaElement; hay que usar attach().
+            shakaPlayer = new shaka.Player();
+            await shakaPlayer.attach(v);
 
-            // Configuración profesional para streaming estable
+            // Configuración profesional para streaming estable.
+            // El bloque manifest anterior estaba duplicado y el segundo sobreescribía
+            // al primero; consolidado en uno solo con los valores más resilientes.
             shakaPlayer.configure({
                 streaming: {
                     bufferingGoal: 20,            // Reducido a 20s para estabilidad en 1080p
@@ -1060,14 +1417,14 @@
                 },
                 manifest: {
                     retryParameters: {
-                        maxAttempts: 3,
+                        maxAttempts: 4,
                         baseDelay: 1000,
                         backoffFactor: 2,
                     },
                     dash: {
-                        ignoreMinBufferTime: true,
+                        ignoreMinBufferTime: true,        // Arranque rápido
                         autoCorrectAudioTimestamp: true,
-                        useLowerBitrateSwitching: true, // Crucial para no trabarse al inicio
+                        useLowerBitrateSwitching: true,   // Crucial para no trabarse al inicio
                     },
                 },
                 abr: {
@@ -1076,16 +1433,6 @@
                     switchInterval: 1,                  // Cambio instantáneo de calidad cada 1s
                     bandwidthUpgradeTarget: 0.85,       // Necesita 85% del bitrate para subir calidad
                     bandwidthDowngradeTarget: 0.5,      // Baja calidad si cae al 50%
-                },
-                manifest: {
-                    retryParameters: {
-                        maxAttempts: 4,
-                        baseDelay: 1000,
-                        backoffFactor: 2,
-                    },
-                    dash: {
-                        ignoreMinBufferTime: true,   // Ignorar buffer time del manifiesto para arranque rápido
-                    },
                 },
             });
 
@@ -1145,13 +1492,17 @@
                 : [formatFileSize(video.size), resolution].filter(Boolean);
             const meta = metaParts.join(' · ');
 
-            let processBtn = '';
+            const safeFileName = video.file_name.replace(/'/g, "\\'");
+
+            let actionsHtml = '';
             if (!video.is_processed) {
-                const safeFileName = video.file_name.replace(/'/g, "\\'");
-                processBtn = `<button class="process-btn" onclick="event.stopPropagation(); processVideo('${safeFileName}')" title="Procesar a DASH">
+                actionsHtml += `<button class="process-btn" onclick="event.stopPropagation(); processVideo('${safeFileName}')" title="Procesar a DASH">
                     <i class="fas fa-wand-magic-sparkles"></i>
                 </button>`;
             }
+            actionsHtml += `<button class="delete-btn" onclick="event.stopPropagation(); deleteVideo('${safeFileName}', ${index})" title="Eliminar video">
+                <i class="fas fa-trash-can"></i>
+            </button>`;
 
             item.innerHTML = `
                 <div class="playlist-item-icon ${iconClass}">
@@ -1164,7 +1515,7 @@
                         ${meta}
                     </div>
                 </div>
-                ${processBtn}
+                <div class="playlist-actions">${actionsHtml}</div>
             `;
 
             item.addEventListener('click', () => selectVideo(index));
@@ -1186,6 +1537,13 @@
             // Update now playing
             nowPlayingTitle.textContent = video.name;
 
+            // En mobile, scrollear suavemente al player
+            if (window.innerWidth < 768) {
+                document.querySelector('.player-section')?.scrollIntoView({
+                    behavior: 'smooth', block: 'start'
+                });
+            }
+
             try {
                 if (video.is_processed && video.manifest_url) {
                     // PR #2: clear stale thumbnail state from the previous
@@ -1202,7 +1560,7 @@
                     // ffmpeg pass. The third-party iOS browsers (CriOS/FxiOS/EdgiOS)
                     // ship their own engines and DO support DASH, so we exclude them.
                     // navigator.platform is deprecated — use userAgent only.
-                    const isIOS = /iP(hone|ad|od)|Safari/.test(navigator.userAgent)
+                    const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent)
                         && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
                     const rawManifestUrl = isIOS
                         ? video.manifest_url.replace(/manifest\.mpd$/, 'master.m3u8')
@@ -1212,9 +1570,8 @@
                     await shakaPlayer.load(manifestUrl);
 
                     // PR #2: WebVTT thumbnail sprite. Must be called AFTER
-                    // load() resolves — Shaka 4.3.5 throws CONTENT_NOT_LOADED
-                    // otherwise (verified against shaka-project/shaka-player
-                    // PR #4497). Both DASH and HLS manifests live next to a
+                    // load() resolves — Shaka throws CONTENT_NOT_LOADED
+                    // otherwise. Both DASH and HLS manifests live next to a
                     // sibling thumbnails.vtt, so we derive the URL with the
                     // same string-replace trick used for the manifest swap.
                     // Failures are non-fatal: a missing sprite just hides the
@@ -1443,12 +1800,50 @@
             else setIcon(volumeBtn, 'volume-high');
         }
 
-        // Progress click
-        progressBar.onclick = e => {
+        // Seek: tap en desktop, drag en mobile. Unified con pointer events.
+        // pointerdown se usa en vez de mousedown/touchstart para cubrir mouse + lápiz + dedo
+        // con un solo handler. Se elimina el handler de move/up al soltar.
+        let seeking = false;
+        function seekFromEvent(e) {
             const rect = progressBar.getBoundingClientRect();
-            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
             v.currentTime = ratio * (v.duration || 0);
-        };
+        }
+        progressBar.addEventListener('pointerdown', (e) => {
+            seeking = true;
+            seekFromEvent(e);
+            document.addEventListener('pointermove', onSeekMove);
+            document.addEventListener('pointerup', onSeekEnd);
+            e.preventDefault();
+        });
+        function onSeekMove(e) {
+            if (!seeking) return;
+            seekFromEvent(e);
+        }
+        function onSeekEnd() {
+            seeking = false;
+            document.removeEventListener('pointermove', onSeekMove);
+            document.removeEventListener('pointerup', onSeekEnd);
+        }
+        // Fallback táctil legacy para navegadores que no soportan pointer events
+        progressBar.addEventListener('touchstart', (e) => {
+            if (e.pointerType) return; // ya lo cubre pointerdown
+            seeking = true;
+            seekFromEvent(e);
+            document.addEventListener('touchmove', onSeekMoveTouch);
+            document.addEventListener('touchend', onSeekEndTouch);
+            e.preventDefault();
+        }, { passive: false });
+        function onSeekMoveTouch(e) {
+            if (!seeking) return;
+            seekFromEvent(e);
+        }
+        function onSeekEndTouch() {
+            seeking = false;
+            document.removeEventListener('touchmove', onSeekMoveTouch);
+            document.removeEventListener('touchend', onSeekEndTouch);
+        }
 
         // PR #2: hover preview tooltip. When the user hovers the seek bar,
         // we ask Shaka for the thumbnail matching the time at the cursor
@@ -1655,6 +2050,44 @@
                 }
             } catch (e) {
                 showToast('Error al procesar video', 'error');
+            }
+        }
+
+        async function deleteVideo(fileName, index) {
+            if (!confirm(`¿Eliminar "${fileName}" permanentemente?`)) return;
+            showToast(`Eliminando: ${fileName}...`, 'info');
+            try {
+                const response = await fetch('/api/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_name: fileName }),
+                });
+                const result = await response.json();
+                if (result.error) {
+                    showToast(result.error, 'error');
+                    return;
+                }
+                videoList.splice(index, 1);
+                document.querySelectorAll('.playlist-item')[index]?.remove();
+                videoCount.textContent = videoList.length;
+                if (index === currentVideoIndex) {
+                    stop();
+                    try { shakaPlayer.unload(); } catch (_) {}
+                    nowPlayingTitle.textContent = 'Ninguno';
+                    currentVideoIndex = -1;
+                } else if (index < currentVideoIndex) {
+                    currentVideoIndex--;
+                }
+                if (videoList.length === 0) {
+                    playlistItems.innerHTML = `
+                        <div style="padding: 40px 20px; text-align: center; color: var(--text-muted);">
+                            <i class="fas fa-video-slash" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>
+                            <p>No hay videos. Sube uno para comenzar.</p>
+                        </div>`;
+                }
+                showToast(`🗑️ ${result.message}`, 'success');
+            } catch (e) {
+                showToast('Error al eliminar video', 'error');
             }
         }
 

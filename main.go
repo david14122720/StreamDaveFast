@@ -17,13 +17,6 @@ import (
 	"web-player-backend/processor"
 )
 
-// RAM Cache para segmentos (Optimización de velocidad)
-type CachedSegment struct {
-	Data       []byte
-	LastAccess time.Time
-	Size       int
-}
-
 const (
 	// cacheMaxEntryBytes: per-entry cap. A single 4K .ts can reach ~8MB; anything
 	// bigger than this is served from disk to avoid starving the cache.
@@ -34,9 +27,7 @@ const (
 )
 
 var (
-	segmentCache = make(map[string]*CachedSegment)
-	cacheBytes   int64
-	cacheMutex   sync.Mutex
+	segCache = NewSegmentCache(cacheMaxEntryBytes, cacheMaxTotalBytes)
 	// BufferPool reduce la presión sobre el GC reutilizando slices de memoria
 	bufferPool = sync.Pool{
 		New: func() interface{} {
@@ -44,86 +35,6 @@ var (
 		},
 	}
 )
-
-// cacheGet returns a cached segment and bumps its LastAccess.
-// Returns (nil, false) on miss.
-func cacheGet(key string) (*CachedSegment, bool) {
-	cacheMutex.Lock()
-	defer cacheMutex.Unlock()
-	seg, ok := segmentCache[key]
-	if !ok {
-		return nil, false
-	}
-	seg.LastAccess = time.Now()
-	return seg, true
-}
-
-// cachePut stores data in the segment cache, enforcing the per-entry
-// and total-size caps. Entries larger than the per-entry cap are
-// dropped (caller falls through to disk). If the total cap is
-// exceeded, the least-recently-accessed entry is evicted until the
-// new entry fits.
-func cachePut(key string, data []byte) {
-	size := len(data)
-	if size > cacheMaxEntryBytes {
-		// Per-entry cap: refuse to cache oversized payloads.
-		return
-	}
-
-	cacheMutex.Lock()
-	defer cacheMutex.Unlock()
-
-	// If the key is already cached, free the old bytes before re-inserting.
-	if existing, ok := segmentCache[key]; ok {
-		cacheBytes -= int64(existing.Size)
-		delete(segmentCache, key)
-	}
-
-	// Evict LRU entries until the new entry fits.
-	for cacheBytes+int64(size) > cacheMaxTotalBytes && len(segmentCache) > 0 {
-		var oldestKey string
-		var oldestTime time.Time
-		first := true
-		for k, seg := range segmentCache {
-			if first || seg.LastAccess.Before(oldestTime) {
-				oldestKey = k
-				oldestTime = seg.LastAccess
-				first = false
-			}
-		}
-		if oldestKey == "" {
-			break
-		}
-		evicted := segmentCache[oldestKey]
-		cacheBytes -= int64(evicted.Size)
-		delete(segmentCache, oldestKey)
-		fmt.Printf("🧹 LRU evict: %s (%d bytes, last access %v)\n", oldestKey, evicted.Size, oldestTime.Round(time.Second))
-	}
-
-	segmentCache[key] = &CachedSegment{
-		Data:       data,
-		LastAccess: time.Now(),
-		Size:       size,
-	}
-	cacheBytes += int64(size)
-}
-
-// cacheDelete removes a key from the cache and updates the size counter.
-func cacheDelete(key string) {
-	cacheMutex.Lock()
-	defer cacheMutex.Unlock()
-	if seg, ok := segmentCache[key]; ok {
-		cacheBytes -= int64(seg.Size)
-		delete(segmentCache, key)
-	}
-}
-
-// cacheBytesNow returns the current aggregate cache size in bytes.
-func cacheBytesNow() int64 {
-	cacheMutex.Lock()
-	defer cacheMutex.Unlock()
-	return cacheBytes
-}
 
 var queue *processor.Queue
 
@@ -157,19 +68,9 @@ func main() {
 	go func() {
 		for {
 			time.Sleep(30 * time.Second)
-			cacheMutex.Lock()
-			count := 0
-			for path, seg := range segmentCache {
-				if time.Since(seg.LastAccess) > 30*time.Second {
-					cacheBytes -= int64(seg.Size)
-					delete(segmentCache, path)
-					count++
-				}
+			if n := segCache.CleanOlderThan(30 * time.Second); n > 0 {
+				fmt.Printf("🧹 Limpiador RAM: Se liberaron %d segmentos (30s inactividad)\n", n)
 			}
-			if count > 0 {
-				fmt.Printf("🧹 Limpiador RAM: Se liberaron %d segmentos (30s inactividad)\n", count)
-			}
-			cacheMutex.Unlock()
 		}
 	}()
 
@@ -221,9 +122,18 @@ func main() {
 	fmt.Println("📦 Procesados: ./processed/")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Servidor HTTP con CORS (escuchando en todas las interfaces)
-	handler := corsMiddleware(mux)
-	log.Fatal(http.ListenAndServe(":"+port, handler))
+	// Servidor HTTP con CORS y gzip (escuchando en todas las interfaces)
+	// ReadHeaderTimeout protege contra slow-loris. ReadTimeout=0: las subidas
+	// de hasta 2GB pueden tardar. WriteTimeout=0: los segmentos de video y
+	// los uploads en stream no deben morir a mitad. IdleTimeout libera
+	// conexiones keep-alive colgadas.
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           corsMiddleware(gzipMiddleware(mux)),
+		ReadHeaderTimeout: 10 * 1e9,
+		IdleTimeout:       120 * 1e9,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 // getLocalIP intenta obtener la IP local real de la red
@@ -269,11 +179,11 @@ func handleDASHFiles(w http.ResponseWriter, r *http.Request) {
 	// Aplica a DASH (.m4s) y HLS (.ts) — los manifests nunca se cachean
 	// (son pequeños y deben leerse frescos para invalidación).
 	if ext == ".m4s" || ext == ".ts" {
-		if seg, ok := cacheGet(filePath); ok {
+		if data, ok := segCache.Get(filePath); ok {
 			w.Header().Set("X-Cache", "HIT-RAM")
 			w.Header().Set("Content-Type", contentTypeFor(ext))
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			w.Write(seg.Data)
+			w.Write(data)
 			return
 		}
 
@@ -281,7 +191,7 @@ func handleDASHFiles(w http.ResponseWriter, r *http.Request) {
 		data, err := os.ReadFile(filePath)
 		if err == nil {
 			fmt.Printf("📥 RAM Cache: Cargando %s\n", filePath)
-			cachePut(filePath, data)
+			segCache.Put(filePath, data)
 
 			// Servir el dato que ya tenemos en memoria (evitamos el doble read de ServeFile)
 			w.Header().Set("X-Cache", "MISS-RAM-DOWNLOADED")
@@ -714,14 +624,10 @@ func handleDeleteVideo(w http.ResponseWriter, r *http.Request) {
 
 // handleStats devuelve estadísticas del servidor (RAM cache, etc.)
 func handleStats(w http.ResponseWriter, r *http.Request) {
-	cacheMutex.Lock()
-	count := len(segmentCache)
-	cacheMutex.Unlock()
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"cache_count":  count,
-		"cache_bytes":  cacheBytesNow(),
+		"cache_count":  segCache.Len(),
+		"cache_bytes":  segCache.Bytes(),
 		"cache_cap":    cacheMaxTotalBytes,
 		"status":       "online",
 	})

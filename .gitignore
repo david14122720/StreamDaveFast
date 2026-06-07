@@ -20,10 +20,5 @@ processed/
 .DS_Store
 Thumbs.db
 
-# VendorN files - se (CD cargan desde CDN)
-css/bootstrap.min.css
-js/jquery.min.js
-js/bootstrap.min.js
-
 # Tooling AI local (no parte del proyecto)
 .atl/
