@@ -1479,7 +1479,6 @@
         function createPlaylistItem(video, index) {
             const item = document.createElement('div');
             item.className = 'playlist-item';
-            item.dataset.index = index;
 
             const iconClass = video.is_processed ? 'dash' : 'raw';
             const iconName = video.is_processed ? 'fa-bolt' : 'fa-film';
@@ -1492,31 +1491,51 @@
                 : [formatFileSize(video.size), resolution].filter(Boolean);
             const meta = metaParts.join(' · ');
 
-            const safeFileName = video.file_name.replace(/'/g, "\\'");
-
-            let actionsHtml = '';
-            if (!video.is_processed) {
-                actionsHtml += `<button class="process-btn" onclick="event.stopPropagation(); processVideo('${safeFileName}')" title="Procesar a DASH">
-                    <i class="fas fa-wand-magic-sparkles"></i>
-                </button>`;
-            }
-            actionsHtml += `<button class="delete-btn" onclick="event.stopPropagation(); deleteVideo('${safeFileName}', ${index})" title="Eliminar video">
-                <i class="fas fa-trash-can"></i>
-            </button>`;
-
-            item.innerHTML = `
-                <div class="playlist-item-icon ${iconClass}">
-                    <i class="fas ${iconName}"></i>
+            // --- Info section ---
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'playlist-item-info';
+            infoDiv.innerHTML = `
+                <div class="playlist-item-name">${(video.name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                <div class="playlist-item-meta">
+                    <span class="tag ${tagClass}">${tagText}</span>
+                    ${meta}
                 </div>
-                <div class="playlist-item-info">
-                    <div class="playlist-item-name">${video.name}</div>
-                    <div class="playlist-item-meta">
-                        <span class="tag ${tagClass}">${tagText}</span>
-                        ${meta}
-                    </div>
-                </div>
-                <div class="playlist-actions">${actionsHtml}</div>
             `;
+
+            // --- Icon section ---
+            const iconDiv = document.createElement('div');
+            iconDiv.className = `playlist-item-icon ${iconClass}`;
+            iconDiv.innerHTML = `<i class="fas ${iconName}"></i>`;
+
+            // --- Actions section (built programmatically, NO innerHTML for buttons) ---
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'playlist-actions';
+
+            if (!video.is_processed) {
+                const processBtn = document.createElement('button');
+                processBtn.className = 'process-btn';
+                processBtn.title = 'Procesar a DASH';
+                processBtn.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i>';
+                processBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    processVideo(video.file_name);
+                });
+                actionsDiv.appendChild(processBtn);
+            }
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-btn';
+            deleteBtn.title = 'Eliminar video';
+            deleteBtn.innerHTML = '<i class="fas fa-trash-can"></i>';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteVideo(video.file_name, index);
+            });
+            actionsDiv.appendChild(deleteBtn);
+
+            item.appendChild(iconDiv);
+            item.appendChild(infoDiv);
+            item.appendChild(actionsDiv);
 
             item.addEventListener('click', () => selectVideo(index));
             return item;
